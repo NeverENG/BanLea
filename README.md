@@ -1,8 +1,10 @@
-# BanLea
+# BanLea · 双环自迭代学习引擎
 
-> 个人专属学习助手 · 本地优先桌面应用 · Private & Self-Evolving
+> **主环塑人，子环塑知。双环交织，持续演化。**
+>
+> Dual-Loop Self-Iterating Learning Engine — *One loop models who you are, the other models what you know.*
 
-**BanLea** 是一个 AI 驱动的学习助手，通过**双层 harness 引擎**持续绘制并迭代你的"学习画像"（27 个维度），用最贴合你认知风格的方式辅导你学习。它会主动猜测你该学什么、该看什么，让你不需要自己决定"下一步"。
+**BanLea** 不是又一个 AI 学习工具。它的核心是一套**双层 harness 架构**——主 harness 持续建模你的学习人格（怎么教），子 harness 追踪每个领域的掌握状态（教什么）。两层画像通过**自迭代闭环**不断演化：每一次对话、每一次点击、每一次停留，都化为证据回流画像，让 BanLea 比你自己更早察觉你卡在哪里、下一步该学什么。27 维画像 + 主动推荐引擎，让你不需要决定"学什么"——BanLea 替你猜，而且越猜越准。
 
 ---
 
