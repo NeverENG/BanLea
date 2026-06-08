@@ -1,3 +1,5 @@
+mod commands;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   use tauri_plugin_sql::{Migration, MigrationKind};
@@ -16,6 +18,11 @@ pub fn run() {
         .add_migrations("sqlite:banlea.db", migrations)
         .build(),
     )
+    .invoke_handler(tauri::generate_handler![
+      commands::save_api_key,
+      commands::get_api_key,
+      commands::delete_api_key
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
