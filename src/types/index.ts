@@ -2,3 +2,4 @@
 export * from "./portrait";
 export * from "./dimensions";
 export * from "./evidence";
+export * from "./recommendation";
