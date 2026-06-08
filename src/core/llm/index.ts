@@ -1,2 +1,4 @@
 // Claude 封装：结构化输出/缓存/流式/重试/模型分层（§8.3）
-export {};
+export * from "./client";
+export * from "./chat";
+export * from "./apiKey";
