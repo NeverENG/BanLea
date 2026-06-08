@@ -1,0 +1,37 @@
+# 依赖
+node_modules/
+.pnp.*
+
+# 构建产物
+dist/
+dist-ssr/
+build/
+out/
+src-tauri/target/
+
+# 环境与密钥（绝不入库）
+.env
+.env.*
+!.env.example
+*.local
+
+# 本地数据库（用户学习数据，绝不入库）
+*.sqlite
+*.sqlite3
+*.db
+
+# 日志
+*.log
+npm-debug.log*
+
+# 编辑器 / 系统
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# 缓存
+.cache/
+.vite/
+*.tsbuildinfo
