@@ -1,2 +1,22 @@
-// SQLite 仓储层（repository 模式，每表一个 repo）
-export {};
+import Database from "@tauri-apps/plugin-sql";
+
+/**
+ * SQLite 仓储层入口（§11）。
+ *
+ * 库文件 banlea.db 由 tauri-plugin-sql 在应用启动时按迁移建好（见 src-tauri）。
+ * 这里提供单例句柄；后续每张表一个 repo（如 evidenceRepo、portraitRepo）复用它。
+ *
+ * 注意：仅在 Tauri 运行时可用（依赖原生 sql 插件），不在纯 Node/vitest 环境运行。
+ */
+
+const DB_URL = "sqlite:banlea.db";
+
+let dbPromise: Promise<Database> | null = null;
+
+/** 获取数据库单例句柄（懒加载） */
+export function getDb(): Promise<Database> {
+  if (!dbPromise) {
+    dbPromise = Database.load(DB_URL);
+  }
+  return dbPromise;
+}
