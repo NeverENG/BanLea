@@ -1,8 +1,30 @@
-:root {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
+@import "tailwindcss";
+
+/* BanLea 设计系统基底（Tailwind v4 CSS-first config）
+   完整设计系统在 M8 打磨；这里先定基础 token 与配色，保证克制留白与统一观感。*/
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+
+  --radius-card: 0.75rem;
+
+  /* 中性色 + 一个克制的强调色（后续可在 §12 调整） */
+  --color-ink: #1a1a1a;
+  --color-muted: #6b7280;
+  --color-surface: #ffffff;
+  --color-canvas: #f7f7f5;
+  --color-accent: #4f46e5;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-canvas);
+  color: var(--color-ink);
 }
