@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
 import { createReadingListRepository } from "@/db/readingListRepo";
+import { createTutorSessionRepository } from "@/db/tutorSessionRepo";
 import type { QueryResult, SqlExecutor } from "@/db/types";
 import type { NewEvidence } from "@/types/evidence";
 import type { Portrait } from "@/types/portrait";
@@ -277,5 +278,91 @@ describe("readingListRepository", () => {
       120,
     ]);
     expect(db.selectCalls[0].bindValues).toEqual([31]);
+  });
+});
+
+describe("tutorSessionRepository", () => {
+  it("createSession 写入 sessions 并返回 id", async () => {
+    const db = new MockDb([{ rowsAffected: 1, lastInsertId: 42 }]);
+    const repo = createTutorSessionRepository(db);
+
+    const session = await repo.createSession({
+      domain: "computer_science",
+      title: "k8s 入门",
+      createdAt: "2026-06-09T09:00:00.000Z",
+      updatedAt: "2026-06-09T09:00:00.000Z",
+    });
+
+    expect(session.id).toBe(42);
+    expect(db.executeCalls[0].query).toContain("INSERT INTO sessions");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      "computer_science",
+      "k8s 入门",
+      "2026-06-09T09:00:00.000Z",
+      "2026-06-09T09:00:00.000Z",
+    ]);
+  });
+
+  it("getLatestByDomain 读取最近会话", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          id: 42,
+          domain_id: "computer_science",
+          title: "k8s 入门",
+          created_at: "2026-06-09T09:00:00.000Z",
+          updated_at: "2026-06-09T09:01:00.000Z",
+        },
+      ],
+    ]);
+
+    const session = await createTutorSessionRepository(db).getLatestByDomain(
+      "computer_science",
+    );
+
+    expect(session?.id).toBe(42);
+    expect(db.selectCalls[0].query).toContain("ORDER BY updated_at DESC");
+    expect(db.selectCalls[0].bindValues).toEqual(["computer_science"]);
+  });
+
+  it("insertMessage 写入 messages 并按 session 读取", async () => {
+    const db = new MockDb([{ rowsAffected: 1, lastInsertId: 77 }], [
+      [
+        {
+          id: 77,
+          session_id: 42,
+          role: "assistant",
+          content: "回复",
+          created_at: "2026-06-09T09:01:00.000Z",
+        },
+      ],
+    ]);
+    const repo = createTutorSessionRepository(db);
+
+    const message = await repo.insertMessage({
+      sessionId: 42,
+      role: "assistant",
+      content: "回复",
+      createdAt: "2026-06-09T09:01:00.000Z",
+    });
+    const messages = await repo.listMessages(42);
+
+    expect(message.id).toBe(77);
+    expect(db.executeCalls[0].query).toContain("INSERT INTO messages");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      42,
+      "assistant",
+      "回复",
+      "2026-06-09T09:01:00.000Z",
+    ]);
+    expect(messages).toEqual([
+      {
+        id: 77,
+        sessionId: 42,
+        role: "assistant",
+        content: "回复",
+        createdAt: "2026-06-09T09:01:00.000Z",
+      },
+    ]);
   });
 });

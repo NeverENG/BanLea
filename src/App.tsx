@@ -3,6 +3,7 @@ import {
   getEvidenceRepository,
   getPortraitRepository,
   getReadingListRepository,
+  getTutorSessionRepository,
 } from "@/db";
 import {
   loadEvidenceTimeline,
@@ -23,6 +24,11 @@ import {
   loadPortraitTimeline,
   type PortraitTimelineItem,
 } from "@/features/portrait";
+import {
+  loadLatestTutorHistory,
+  saveTutorTurnMessages,
+  type TutorHistorySnapshot,
+} from "@/features/history";
 import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
@@ -126,6 +132,7 @@ export default function App() {
   const [content, setContent] = useState("帮我入门 k8s");
   const [tutorInput, setTutorInput] = useState("帮我入门 k8s");
   const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>([]);
+  const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
   const [score, setScore] = useState(0.6);
   const [dwellSeconds, setDwellSeconds] = useState(60);
   const [lastEvidence, setLastEvidence] = useState<Evidence | null>(null);
@@ -199,6 +206,8 @@ export default function App() {
           setPortraitTimeline(next.timeline);
           setEvidenceTimeline(next.evidence);
           setReadingListItems(next.readingList);
+          setTutorMessages(next.tutorHistory.messages);
+          setTutorSessionId(next.tutorHistory.session?.id ?? null);
           setLoopStatusMessage("已读取");
         }
       })
@@ -292,17 +301,24 @@ export default function App() {
     timeline: PortraitTimelineItem[];
     evidence: EvidenceTimelineItem[];
     readingList: ReadingListViewItem[];
+    tutorHistory: TutorHistorySnapshot;
   }> {
-    const [evidenceRepository, portraitRepository, readingListRepository] = await Promise.all([
+    const [
+      evidenceRepository,
+      portraitRepository,
+      readingListRepository,
+      tutorSessionRepository,
+    ] = await Promise.all([
       getEvidenceRepository(),
       getPortraitRepository(),
       getReadingListRepository(),
+      getTutorSessionRepository(),
     ]);
     const repositories = {
       evidence: evidenceRepository,
       portraits: portraitRepository,
     };
-    const [status, timeline, evidence, readingList] = await Promise.all([
+    const [status, timeline, evidence, readingList, tutorHistory] = await Promise.all([
       loadLearningLoopStatus({
         domain: targetDomain,
         repositories,
@@ -319,8 +335,12 @@ export default function App() {
         domain: targetDomain,
         repository: readingListRepository,
       }),
+      loadLatestTutorHistory({
+        domain: targetDomain,
+        repository: tutorSessionRepository,
+      }),
     ]);
-    return { status, timeline, evidence, readingList };
+    return { status, timeline, evidence, readingList, tutorHistory };
   }
 
   async function refreshLoopStatus(targetDomain = domain) {
@@ -332,6 +352,8 @@ export default function App() {
       setPortraitTimeline(next.timeline);
       setEvidenceTimeline(next.evidence);
       setReadingListItems(next.readingList);
+      setTutorMessages(next.tutorHistory.messages);
+      setTutorSessionId(next.tutorHistory.session?.id ?? null);
       setLoopStatusMessage("已刷新");
     } catch (error) {
       setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
@@ -344,10 +366,16 @@ export default function App() {
     setIsSending(true);
     setStatus("发送中");
     try {
-      const [learningEvents, portraitRepository, readingListRepository] = await Promise.all([
+      const [
+        learningEvents,
+        portraitRepository,
+        readingListRepository,
+        tutorSessionRepository,
+      ] = await Promise.all([
         createRuntimeLearningService(),
         getPortraitRepository(),
         getReadingListRepository(),
+        getTutorSessionRepository(),
       ]);
       const replyGenerator = isClaudeReady
         ? (await import("@/features/tutor/claudeReply")).createClaudeTutorReplyGenerator()
@@ -367,12 +395,17 @@ export default function App() {
         domain,
         content: tutorInput,
       });
+      const savedTurn = await saveTutorTurnMessages({
+        domain,
+        repository: tutorSessionRepository,
+        sessionId: tutorSessionId,
+        userMessage: result.userMessage,
+        assistantMessage: result.assistantMessage,
+        titleSeed: result.userMessage.content,
+      });
 
-      setTutorMessages((messages) => [
-        ...messages,
-        result.userMessage,
-        result.assistantMessage,
-      ]);
+      setTutorMessages(savedTurn.messages);
+      setTutorSessionId(savedTurn.session.id);
       setTutorInput("");
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);

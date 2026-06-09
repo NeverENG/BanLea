@@ -2,10 +2,12 @@ import Database from "@tauri-apps/plugin-sql";
 import { createEvidenceRepository } from "./evidenceRepo";
 import { createPortraitRepository } from "./portraitRepo";
 import { createReadingListRepository } from "./readingListRepo";
+import { createTutorSessionRepository } from "./tutorSessionRepo";
 
 export * from "./evidenceRepo";
 export * from "./portraitRepo";
 export * from "./readingListRepo";
+export * from "./tutorSessionRepo";
 export * from "./types";
 
 /**
@@ -39,4 +41,8 @@ export async function getEvidenceRepository() {
 
 export async function getReadingListRepository() {
   return createReadingListRepository(await getDb());
+}
+
+export async function getTutorSessionRepository() {
+  return createTutorSessionRepository(await getDb());
 }
