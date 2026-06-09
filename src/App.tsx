@@ -19,7 +19,11 @@ import {
   loadPortraitTimeline,
   type PortraitTimelineItem,
 } from "@/features/portrait";
-import { createTutorInputService, type TutorMessage } from "@/features/tutor";
+import {
+  createTutorInputService,
+  loadTutorPromptContext,
+  type TutorMessage,
+} from "@/features/tutor";
 import type { Evidence } from "@/types/evidence";
 import type {
   HarnessRunRepositories,
@@ -308,8 +312,17 @@ export default function App() {
     setIsSending(true);
     setStatus("发送中");
     try {
+      const [learningEvents, portraitRepository] = await Promise.all([
+        createRuntimeLearningService(),
+        getPortraitRepository(),
+      ]);
       const service = createTutorInputService({
-        learningEvents: await createRuntimeLearningService(),
+        learningEvents,
+        promptContextProvider: ({ domain: targetDomain }) =>
+          loadTutorPromptContext({
+            domain: targetDomain,
+            portraits: portraitRepository,
+          }),
       });
       const result = await service.sendUserMessage({
         domain,

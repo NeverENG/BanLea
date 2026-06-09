@@ -27,6 +27,8 @@ export interface TutorTurnResult {
 
 export interface TutorInputServiceOptions {
   learningEvents: Pick<LearningEventService, "recordChat">;
+  promptContextProvider?: TutorPromptContextProvider;
+  replyGenerator?: TutorReplyGenerator;
   now?: () => string;
 }
 
@@ -67,6 +69,29 @@ export interface TutorPromptContext {
   systemContext: string;
 }
 
+export interface TutorPromptContextProviderInput {
+  domain: string;
+  content: string;
+  sessionId?: number;
+  learning: LearningEventResult;
+}
+
+export type TutorPromptContextProvider = (
+  input: TutorPromptContextProviderInput,
+) => Promise<TutorPromptContext | null> | TutorPromptContext | null;
+
+export interface TutorReplyInput {
+  domain: string;
+  content: string;
+  sessionId?: number;
+  learning: LearningEventResult;
+  promptContext: TutorPromptContext | null;
+}
+
+export type TutorReplyGenerator = (
+  input: TutorReplyInput,
+) => Promise<string> | string;
+
 const defaultNow = () => new Date().toISOString();
 
 function normalizeContent(content: string): string {
@@ -95,6 +120,10 @@ function assistantReplyContent(learning: LearningEventResult): string {
     return "已记录这次问题。当前未初始化 API Key，画像更新会先保留在待处理证据里。";
   }
   return "已记录这次问题。当前证据还不够触发画像更新，我会继续积累上下文。";
+}
+
+function defaultTutorReplyGenerator(input: TutorReplyInput): string {
+  return assistantReplyContent(input.learning);
 }
 
 function dimensionToPromptItem(
@@ -193,6 +222,7 @@ export function createTutorInputService(
   options: TutorInputServiceOptions,
 ): TutorInputService {
   const now = options.now ?? defaultNow;
+  const replyGenerator = options.replyGenerator ?? defaultTutorReplyGenerator;
 
   return {
     async sendUserMessage(input) {
@@ -204,6 +234,21 @@ export function createTutorInputService(
         sessionId: input.sessionId,
       });
       const createdAt = learning.evidence.createdAt || now();
+      const promptContext = options.promptContextProvider
+        ? await options.promptContextProvider({
+            domain: input.domain,
+            content,
+            sessionId: input.sessionId,
+            learning,
+          })
+        : null;
+      const replyContent = await replyGenerator({
+        domain: input.domain,
+        content,
+        sessionId: input.sessionId,
+        learning,
+        promptContext,
+      });
       const assistantCreatedAt = now();
       const userMessage: TutorMessage = {
         id: messageId(learning.evidence.id, createdAt),
@@ -216,7 +261,7 @@ export function createTutorInputService(
       const assistantMessage: TutorMessage = {
         id: assistantMessageId(learning.evidence.id, assistantCreatedAt),
         role: "assistant",
-        content: assistantReplyContent(learning),
+        content: replyContent,
         domain: input.domain,
         createdAt: assistantCreatedAt,
         evidenceId: learning.evidence.id ?? null,
