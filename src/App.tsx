@@ -33,6 +33,7 @@ import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
   loadReadingListOverview,
+  type ReadingListGroup,
   type ReadingListSummary,
   type ReadingListViewItem,
 } from "@/features/reading-list";
@@ -166,6 +167,7 @@ export default function App() {
   const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
   const [evidenceTimeline, setEvidenceTimeline] = useState<EvidenceTimelineItem[]>([]);
   const [readingListItems, setReadingListItems] = useState<ReadingListViewItem[]>([]);
+  const [readingListGroups, setReadingListGroups] = useState<ReadingListGroup[]>([]);
   const [readingListSummary, setReadingListSummary] = useState<ReadingListSummary>(
     EMPTY_READING_SUMMARY,
   );
@@ -221,6 +223,7 @@ export default function App() {
           setPortraitTimeline(next.timeline);
           setEvidenceTimeline(next.evidence);
           setReadingListItems(next.readingList.items);
+          setReadingListGroups(next.readingList.groups);
           setReadingListSummary(next.readingList.summary);
           setTutorMessages(next.tutorHistory.messages);
           setTutorSessionId(next.tutorHistory.session?.id ?? null);
@@ -368,6 +371,7 @@ export default function App() {
       setPortraitTimeline(next.timeline);
       setEvidenceTimeline(next.evidence);
       setReadingListItems(next.readingList.items);
+      setReadingListGroups(next.readingList.groups);
       setReadingListSummary(next.readingList.summary);
       setTutorMessages(next.tutorHistory.messages);
       setTutorSessionId(next.tutorHistory.session?.id ?? null);
@@ -759,42 +763,51 @@ export default function App() {
             {readingListItems.length === 0 ? (
               <div>暂无待读资料</div>
             ) : (
-              readingListItems.slice(0, 5).map((item) => (
-                <div
-                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
-                  key={item.id ?? `${item.title}-${item.addedAt}`}
-                >
-                  <div className="font-medium text-[var(--color-ink)]">
-                    {item.url ? (
-                      <a href={item.url} rel="noreferrer" target="_blank">
-                        {item.title}
-                      </a>
-                    ) : (
-                      item.title
-                    )}
-                  </div>
-                  <div>
-                    {item.kind} · {item.status}
-                  </div>
-                  <div className="mt-2 flex gap-2">
-                    {READING_STATUS_ACTIONS.map((action) => (
-                      <button
-                        className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] disabled:opacity-50"
-                        disabled={
-                          item.id === null ||
-                          readingListBusyId === item.id ||
-                          item.status === action.status
-                        }
-                        key={action.status}
-                        onClick={() => changeReadingStatus(item, action.status)}
-                        type="button"
+              readingListGroups
+                .filter((group) => group.items.length > 0)
+                .map((group) => (
+                  <div className="space-y-2" key={group.status}>
+                    <div className="text-xs font-medium text-[var(--color-ink)]">
+                      {group.label} · {group.items.length}
+                    </div>
+                    {group.items.slice(0, 3).map((item) => (
+                      <div
+                        className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
+                        key={item.id ?? `${item.title}-${item.addedAt}`}
                       >
-                        {action.label}
-                      </button>
+                        <div className="font-medium text-[var(--color-ink)]">
+                          {item.url ? (
+                            <a href={item.url} rel="noreferrer" target="_blank">
+                              {item.title}
+                            </a>
+                          ) : (
+                            item.title
+                          )}
+                        </div>
+                        <div>
+                          {item.kind} · {item.status}
+                        </div>
+                        <div className="mt-2 flex gap-2">
+                          {READING_STATUS_ACTIONS.map((action) => (
+                            <button
+                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] disabled:opacity-50"
+                              disabled={
+                                item.id === null ||
+                                readingListBusyId === item.id ||
+                                item.status === action.status
+                              }
+                              key={action.status}
+                              onClick={() => changeReadingStatus(item, action.status)}
+                              type="button"
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))
+                ))
             )}
             <div>{readingListMessage}</div>
           </div>

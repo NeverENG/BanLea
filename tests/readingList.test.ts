@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
+  groupReadingListItems,
   loadReadingList,
   loadReadingListOverview,
   summarizeReadingList,
@@ -190,8 +191,40 @@ describe("reading-list feature", () => {
     });
 
     expect(overview.items).toHaveLength(1);
+    expect(overview.groups.find((group) => group.status === "done")?.items).toHaveLength(1);
     expect(overview.summary.byStatus.done).toBe(1);
     expect(overview.summary.doneDwellSeconds).toBe(180);
+  });
+
+  it("按稳定状态顺序输出书单分组", () => {
+    const groups = groupReadingListItems([
+      {
+        id: 1,
+        title: "已读资料",
+        kind: "doc",
+        status: "done",
+        url: null,
+        addedAt: "2026-06-09T08:00:00.000Z",
+      },
+      {
+        id: 2,
+        title: "待读资料",
+        kind: "article",
+        status: "todo",
+        url: null,
+        addedAt: "2026-06-09T08:01:00.000Z",
+      },
+    ]);
+
+    expect(groups.map((group) => group.status)).toEqual([
+      "todo",
+      "reading",
+      "later",
+      "done",
+    ]);
+    expect(groups[0].label).toBe("待读");
+    expect(groups[0].items.map((item) => item.title)).toEqual(["待读资料"]);
+    expect(groups[3].items.map((item) => item.title)).toEqual(["已读资料"]);
   });
 
   it("更新书单状态并写回 reading evidence", async () => {

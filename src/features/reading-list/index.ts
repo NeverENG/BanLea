@@ -51,8 +51,29 @@ export interface ReadingListSummary {
 
 export interface ReadingListOverview {
   items: ReadingListViewItem[];
+  groups: ReadingListGroup[];
   summary: ReadingListSummary;
 }
+
+export interface ReadingListGroup {
+  status: ReadingListStatus;
+  label: string;
+  items: ReadingListViewItem[];
+}
+
+const READING_LIST_STATUS_ORDER: ReadingListStatus[] = [
+  "todo",
+  "reading",
+  "later",
+  "done",
+];
+
+const READING_LIST_STATUS_LABELS: Record<ReadingListStatus, string> = {
+  todo: "待读",
+  reading: "阅读中",
+  later: "稍后",
+  done: "已读",
+};
 
 const defaultNow = () => new Date().toISOString();
 
@@ -94,6 +115,16 @@ export function summarizeReadingList(items: ReadingListItem[]): ReadingListSumma
   };
 }
 
+export function groupReadingListItems(
+  items: ReadingListViewItem[],
+): ReadingListGroup[] {
+  return READING_LIST_STATUS_ORDER.map((status) => ({
+    status,
+    label: READING_LIST_STATUS_LABELS[status],
+    items: items.filter((item) => item.status === status),
+  }));
+}
+
 function sourceIdForSuggestion(
   suggestion: TutorResourceSuggestion,
   index: number,
@@ -115,8 +146,10 @@ export async function loadReadingListOverview(
   options: LoadReadingListOptions,
 ): Promise<ReadingListOverview> {
   const rows = await options.repository.listByDomain(options.domain);
+  const items = rows.map(toViewItem);
   return {
-    items: rows.map(toViewItem),
+    items,
+    groups: groupReadingListItems(items),
     summary: summarizeReadingList(rows),
   };
 }
