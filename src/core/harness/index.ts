@@ -1,7 +1,12 @@
 import { z } from "zod";
+import {
+  shouldTriggerHarnessUpdate,
+  type HarnessTriggerDecision,
+} from "@/core/evidence";
 import { askStructured, type AskOptions } from "@/core/llm";
 import type { EvidenceRepository } from "@/db/evidenceRepo";
 import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
+import type { HarnessTriggerPolicy } from "@/config";
 import { DIMENSION_META } from "@/types/dimensions";
 import type { Evidence } from "@/types/evidence";
 import {
@@ -70,6 +75,10 @@ export interface RunHarnessUpdateInput {
   model?: HarnessModel;
 }
 
+export interface RunHarnessUpdateIfTriggeredInput extends RunHarnessUpdateInput {
+  policy?: HarnessTriggerPolicy;
+}
+
 export type HarnessUpdateResult =
   | {
       status: "skipped";
@@ -79,6 +88,23 @@ export type HarnessUpdateResult =
     }
   | {
       status: "updated";
+      portrait: Portrait;
+      record: PortraitVersionRecord;
+      consumedEvidenceIds: number[];
+      consumedCount: number;
+    };
+
+export type TriggeredHarnessUpdateResult =
+  | {
+      status: "skipped";
+      reason: "trigger_not_met";
+      trigger: HarnessTriggerDecision;
+      latest: PortraitVersionRecord | null;
+      consumedEvidenceIds: [];
+    }
+  | {
+      status: "updated";
+      trigger: Extract<HarnessTriggerDecision, { shouldRun: true }>;
       portrait: Portrait;
       record: PortraitVersionRecord;
       consumedEvidenceIds: number[];
@@ -338,6 +364,21 @@ export async function runHarnessUpdate(
     };
   }
 
+  return applyHarnessUpdate({
+    ...input,
+    latest,
+    pendingEvidence,
+  });
+}
+
+async function applyHarnessUpdate(
+  input: RunHarnessUpdateInput & {
+    latest: PortraitVersionRecord | null;
+    pendingEvidence: Evidence[];
+  },
+): Promise<Extract<HarnessUpdateResult, { status: "updated" }>> {
+  const { portraits, evidence } = input.repositories;
+  const { latest, pendingEvidence } = input;
   const portrait = latest
     ? await reevaluatePortrait({
         previous: latest.portrait,
@@ -368,5 +409,44 @@ export async function runHarnessUpdate(
     record,
     consumedEvidenceIds,
     consumedCount,
+  };
+}
+
+export async function runHarnessUpdateIfTriggered(
+  input: RunHarnessUpdateIfTriggeredInput,
+): Promise<TriggeredHarnessUpdateResult> {
+  assertDomainMatchesScope(input.scope, input.domain);
+
+  const { portraits, evidence } = input.repositories;
+  const latest = await portraits.getLatest(input.domain);
+  const pendingEvidence = await evidence.listUnconsumed(
+    input.domain,
+    input.evidenceLimit,
+  );
+  const trigger = shouldTriggerHarnessUpdate({
+    latestPortrait: latest?.portrait ?? null,
+    unconsumedEvidence: pendingEvidence,
+    policy: input.policy,
+  });
+
+  if (!trigger.shouldRun) {
+    return {
+      status: "skipped",
+      reason: "trigger_not_met",
+      trigger,
+      latest,
+      consumedEvidenceIds: [],
+    };
+  }
+
+  const result = await applyHarnessUpdate({
+    ...input,
+    latest,
+    pendingEvidence,
+  });
+
+  return {
+    ...result,
+    trigger,
   };
 }

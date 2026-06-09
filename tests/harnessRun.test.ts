@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { AskOptions } from "@/core/llm";
 import {
   runHarnessUpdate,
+  runHarnessUpdateIfTriggered,
   type HarnessModel,
   type PortraitPatch,
 } from "@/core/harness";
@@ -163,5 +164,61 @@ describe("runHarnessUpdate", () => {
     }
     expect(repos.portraits.save).toHaveBeenCalledTimes(1);
     expect(repos.evidence.markConsumed).toHaveBeenCalledWith([7], 4);
+  });
+});
+
+describe("runHarnessUpdateIfTriggered", () => {
+  it("触发条件未满足时跳过，不调用模型、不写库", async () => {
+    const repos = repositories({
+      latest: record(portrait()),
+      pending: [evidence({ id: 1 })],
+    });
+    const model = mockModel<PortraitPatch>({
+      dimensions: {},
+      changeSummary: "不应调用",
+    });
+
+    const result = await runHarnessUpdateIfTriggered({
+      scope: "domain",
+      domain: "computer_science",
+      repositories: repos,
+      model,
+      policy: {
+        minEvidenceCount: 3,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+      },
+    });
+
+    expect(result.status).toBe("skipped");
+    expect(result.trigger.shouldRun).toBe(false);
+    expect(result.trigger.reason).toBe("evidence_count");
+    expect(model.ask).not.toHaveBeenCalled();
+    expect(repos.portraits.save).not.toHaveBeenCalled();
+    expect(repos.evidence.markConsumed).not.toHaveBeenCalled();
+  });
+
+  it("触发首次建档时生成画像、保存并消费证据", async () => {
+    const repos = repositories({ latest: null, pending: [evidence({ id: 8 })] });
+    const model = mockModel(portrait({ scope: "global", domain: "wrong" }));
+
+    const result = await runHarnessUpdateIfTriggered({
+      scope: "domain",
+      domain: "computer_science",
+      repositories: repos,
+      model,
+      now,
+    });
+
+    expect(result.status).toBe("updated");
+    expect(result.trigger.reason).toBe("first_portrait");
+    if (result.status === "updated") {
+      expect(result.portrait.portraitVersion).toBe(1);
+      expect(result.consumedEvidenceIds).toEqual([8]);
+    }
+    expect(repos.portraits.getLatest).toHaveBeenCalledTimes(1);
+    expect(repos.evidence.listUnconsumed).toHaveBeenCalledTimes(1);
+    expect(repos.portraits.save).toHaveBeenCalledTimes(1);
+    expect(repos.evidence.markConsumed).toHaveBeenCalledWith([8], 1);
   });
 });
