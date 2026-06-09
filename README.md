@@ -213,7 +213,7 @@ npm run tauri:build
 
 ### 配置 API Key
 
-1. 启动应用后进入「设置」页
+1. 启动应用后在右侧「API Key」区域操作
 2. 填入你的 Anthropic API Key
 3. Key 自动存入 OS Keychain，后续启动自动读取
 

@@ -1,6 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getEvidenceRepository, getPortraitRepository } from "@/db";
 import { createLearningEventService, type LearningEventResult } from "@/features/events";
+import {
+  createApiKeySettingsService,
+  type ApiKeyStatus,
+} from "@/features/settings/apiKeySettings";
 import type { Evidence } from "@/types/evidence";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
@@ -44,11 +48,89 @@ export default function App() {
   const [lastResult, setLastResult] = useState<LearningEventResult | null>(null);
   const [status, setStatus] = useState("等待记录");
   const [isSaving, setIsSaving] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({
+    configured: false,
+    maskedKey: null,
+  });
+  const [apiKeyMessage, setApiKeyMessage] = useState("未设置");
+  const [isKeyBusy, setIsKeyBusy] = useState(false);
+
+  const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
   const selectedLabel = useMemo(
     () => EVENT_OPTIONS.find((option) => option.kind === kind)?.label ?? kind,
     [kind],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsKeyBusy(true);
+    apiKeyService
+      .loadStatus()
+      .then((next) => {
+        if (!cancelled) {
+          setApiKeyStatus(next);
+          setApiKeyMessage(next.configured ? "已保存" : "未设置");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsKeyBusy(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKeyService]);
+
+  async function saveKey() {
+    setIsKeyBusy(true);
+    setApiKeyMessage("保存中");
+    try {
+      const next = await apiKeyService.save(apiKeyInput);
+      setApiKeyStatus(next);
+      setApiKeyInput("");
+      setApiKeyMessage("已保存");
+    } catch (error) {
+      setApiKeyMessage(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setIsKeyBusy(false);
+    }
+  }
+
+  async function deleteKey() {
+    setIsKeyBusy(true);
+    setApiKeyMessage("删除中");
+    try {
+      const next = await apiKeyService.delete();
+      setApiKeyStatus(next);
+      setApiKeyInput("");
+      setApiKeyMessage("已删除");
+    } catch (error) {
+      setApiKeyMessage(error instanceof Error ? error.message : "删除失败");
+    } finally {
+      setIsKeyBusy(false);
+    }
+  }
+
+  async function refreshKeyStatus() {
+    setIsKeyBusy(true);
+    try {
+      const next = await apiKeyService.loadStatus();
+      setApiKeyStatus(next);
+      setApiKeyMessage(next.configured ? "已保存" : "未设置");
+    } catch (error) {
+      setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
+    } finally {
+      setIsKeyBusy(false);
+    }
+  }
 
   async function recordEvent() {
     setIsSaving(true);
@@ -216,7 +298,48 @@ export default function App() {
         </section>
 
         <aside className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <div className="text-sm font-medium">状态</div>
+          <div className="text-sm font-medium">API Key</div>
+          <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
+            <div className="text-sm text-[var(--color-muted)]">
+              {apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}
+            </div>
+            <input
+              className="mt-3 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+              onChange={(event) => setApiKeyInput(event.target.value)}
+              placeholder="Anthropic API Key"
+              type="password"
+              value={apiKeyInput}
+            />
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button
+                className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                disabled={isKeyBusy}
+                onClick={saveKey}
+                type="button"
+              >
+                保存
+              </button>
+              <button
+                className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
+                disabled={isKeyBusy}
+                onClick={deleteKey}
+                type="button"
+              >
+                删除
+              </button>
+              <button
+                className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
+                disabled={isKeyBusy}
+                onClick={refreshKeyStatus}
+                type="button"
+              >
+                刷新
+              </button>
+            </div>
+            <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyMessage}</div>
+          </div>
+
+          <div className="mt-5 text-sm font-medium">状态</div>
           <div className="mt-3 rounded-md bg-[var(--color-soft)] p-3 text-sm text-[var(--color-muted)]">
             {status}
           </div>
