@@ -5,19 +5,16 @@ import {
   getReadingListRepository,
   getTutorSessionRepository,
 } from "@/db";
-import {
-  loadEvidenceTimeline,
-  type EvidenceTimelineItem,
-} from "@/features/evidence";
+import type { EvidenceTimelineItem } from "@/features/evidence";
 import { EvidenceStatusPanel } from "@/features/evidence/EvidenceStatusPanel";
 import {
-  buildLearningDashboardSummary,
+  type DomainLearningSnapshot,
   type LearningDashboardSummary,
 } from "@/features/dashboard";
 import { DashboardSummaryPanel } from "@/features/dashboard/DashboardSummaryPanel";
+import { loadRuntimeDomainLearningSnapshot } from "@/features/dashboard/runtimeSnapshot";
 import {
   createLearningEventService,
-  loadLearningLoopStatus,
   type LearningEventResult,
   type LearningEventService,
   type LearningLoopStatus,
@@ -26,20 +23,12 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
-import {
-  loadPortraitTimeline,
-  type PortraitTimelineItem,
-} from "@/features/portrait";
+import type { PortraitTimelineItem } from "@/features/portrait";
 import { PortraitStatusPanel } from "@/features/portrait/PortraitStatusPanel";
-import {
-  loadLatestTutorHistory,
-  saveTutorTurnMessages,
-  type TutorHistorySnapshot,
-} from "@/features/history";
+import { saveTutorTurnMessages } from "@/features/history";
 import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
-  loadReadingListOverview,
   type ReadingListGroup,
   type ReadingListSummary,
   type ReadingListViewItem,
@@ -159,6 +148,18 @@ export default function App() {
     [kind],
   );
 
+  function applyDomainLearningSnapshot(snapshot: DomainLearningSnapshot) {
+    setLoopStatus(snapshot.status);
+    setPortraitTimeline(snapshot.portraitTimeline);
+    setEvidenceTimeline(snapshot.evidenceTimeline);
+    setReadingListItems(snapshot.readingList.items);
+    setReadingListGroups(snapshot.readingList.groups);
+    setReadingListSummary(snapshot.readingList.summary);
+    setDashboardSummary(snapshot.dashboard);
+    setTutorMessages(snapshot.tutorHistory.messages);
+    setTutorSessionId(snapshot.tutorHistory.session?.id ?? null);
+  }
+
   useEffect(() => {
     let cancelled = false;
     setIsKeyBusy(true);
@@ -192,18 +193,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     setIsLoopStatusLoading(true);
-    loadDomainLoopSnapshot(domain)
+    loadRuntimeDomainLearningSnapshot(domain)
       .then((next) => {
         if (!cancelled) {
-          setLoopStatus(next.status);
-          setPortraitTimeline(next.timeline);
-          setEvidenceTimeline(next.evidence);
-          setReadingListItems(next.readingList.items);
-          setReadingListGroups(next.readingList.groups);
-          setReadingListSummary(next.readingList.summary);
-          setDashboardSummary(next.dashboard);
-          setTutorMessages(next.tutorHistory.messages);
-          setTutorSessionId(next.tutorHistory.session?.id ?? null);
+          applyDomainLearningSnapshot(next);
           setLoopStatusMessage("已读取");
         }
       })
@@ -292,80 +285,12 @@ export default function App() {
     });
   }
 
-  async function loadDomainLoopSnapshot(targetDomain: string): Promise<{
-    status: LearningLoopStatus;
-    timeline: PortraitTimelineItem[];
-    evidence: EvidenceTimelineItem[];
-    readingList: Awaited<ReturnType<typeof loadReadingListOverview>>;
-    tutorHistory: TutorHistorySnapshot;
-    dashboard: LearningDashboardSummary;
-  }> {
-    const [
-      evidenceRepository,
-      portraitRepository,
-      readingListRepository,
-      tutorSessionRepository,
-    ] = await Promise.all([
-      getEvidenceRepository(),
-      getPortraitRepository(),
-      getReadingListRepository(),
-      getTutorSessionRepository(),
-    ]);
-    const repositories = {
-      evidence: evidenceRepository,
-      portraits: portraitRepository,
-    };
-    const [status, timeline, evidence, readingList, tutorHistory] = await Promise.all([
-      loadLearningLoopStatus({
-        domain: targetDomain,
-        repositories,
-      }),
-      loadPortraitTimeline({
-        domain: targetDomain,
-        repository: portraitRepository,
-      }),
-      loadEvidenceTimeline({
-        domain: targetDomain,
-        repository: evidenceRepository,
-      }),
-      loadReadingListOverview({
-        domain: targetDomain,
-        repository: readingListRepository,
-      }),
-      loadLatestTutorHistory({
-        domain: targetDomain,
-        repository: tutorSessionRepository,
-      }),
-    ]);
-    return {
-      status,
-      timeline,
-      evidence,
-      readingList,
-      tutorHistory,
-      dashboard: buildLearningDashboardSummary({
-        reading: readingList.summary,
-        evidence,
-        portraits: timeline,
-        loopStatus: status,
-      }),
-    };
-  }
-
   async function refreshLoopStatus(targetDomain = domain) {
     setIsLoopStatusLoading(true);
     setLoopStatusMessage("读取中");
     try {
-      const next = await loadDomainLoopSnapshot(targetDomain);
-      setLoopStatus(next.status);
-      setPortraitTimeline(next.timeline);
-      setEvidenceTimeline(next.evidence);
-      setReadingListItems(next.readingList.items);
-      setReadingListGroups(next.readingList.groups);
-      setReadingListSummary(next.readingList.summary);
-      setDashboardSummary(next.dashboard);
-      setTutorMessages(next.tutorHistory.messages);
-      setTutorSessionId(next.tutorHistory.session?.id ?? null);
+      const next = await loadRuntimeDomainLearningSnapshot(targetDomain);
+      applyDomainLearningSnapshot(next);
       setLoopStatusMessage("已刷新");
     } catch (error) {
       setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
