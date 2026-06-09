@@ -10,6 +10,10 @@ import {
   type EvidenceTimelineItem,
 } from "@/features/evidence";
 import {
+  buildLearningDashboardSummary,
+  type LearningDashboardSummary,
+} from "@/features/dashboard";
+import {
   createLearningEventService,
   loadLearningLoopStatus,
   type LearningEventResult,
@@ -108,6 +112,20 @@ const EMPTY_READING_SUMMARY: ReadingListSummary = {
   doneDwellSeconds: 0,
 };
 
+const EMPTY_DASHBOARD_SUMMARY: LearningDashboardSummary = {
+  totalResources: 0,
+  doneResources: 0,
+  laterResources: 0,
+  doneDwellSeconds: 0,
+  evidenceCount: 0,
+  pendingEvidenceCount: 0,
+  consumedEvidenceCount: 0,
+  latestPortraitVersion: null,
+  latestPortraitConfidence: null,
+  portraitVersionCount: 0,
+  lastActivityAt: null,
+};
+
 function triggerSummary(status: LearningLoopStatus | null): string {
   if (!status) {
     return "未读取";
@@ -171,6 +189,9 @@ export default function App() {
   const [readingListSummary, setReadingListSummary] = useState<ReadingListSummary>(
     EMPTY_READING_SUMMARY,
   );
+  const [dashboardSummary, setDashboardSummary] = useState<LearningDashboardSummary>(
+    EMPTY_DASHBOARD_SUMMARY,
+  );
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
   const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
@@ -225,6 +246,7 @@ export default function App() {
           setReadingListItems(next.readingList.items);
           setReadingListGroups(next.readingList.groups);
           setReadingListSummary(next.readingList.summary);
+          setDashboardSummary(next.dashboard);
           setTutorMessages(next.tutorHistory.messages);
           setTutorSessionId(next.tutorHistory.session?.id ?? null);
           setLoopStatusMessage("已读取");
@@ -321,6 +343,7 @@ export default function App() {
     evidence: EvidenceTimelineItem[];
     readingList: Awaited<ReturnType<typeof loadReadingListOverview>>;
     tutorHistory: TutorHistorySnapshot;
+    dashboard: LearningDashboardSummary;
   }> {
     const [
       evidenceRepository,
@@ -359,7 +382,19 @@ export default function App() {
         repository: tutorSessionRepository,
       }),
     ]);
-    return { status, timeline, evidence, readingList, tutorHistory };
+    return {
+      status,
+      timeline,
+      evidence,
+      readingList,
+      tutorHistory,
+      dashboard: buildLearningDashboardSummary({
+        reading: readingList.summary,
+        evidence,
+        portraits: timeline,
+        loopStatus: status,
+      }),
+    };
   }
 
   async function refreshLoopStatus(targetDomain = domain) {
@@ -373,6 +408,7 @@ export default function App() {
       setReadingListItems(next.readingList.items);
       setReadingListGroups(next.readingList.groups);
       setReadingListSummary(next.readingList.summary);
+      setDashboardSummary(next.dashboard);
       setTutorMessages(next.tutorHistory.messages);
       setTutorSessionId(next.tutorHistory.session?.id ?? null);
       setLoopStatusMessage("已刷新");
@@ -747,6 +783,21 @@ export default function App() {
           <div className="mt-5 text-sm font-medium">状态</div>
           <div className="mt-3 rounded-md bg-[var(--color-soft)] p-3 text-sm text-[var(--color-muted)]">
             {status}
+          </div>
+
+          <div className="mt-5 text-sm font-medium">看板摘要</div>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            <div>资料：{dashboardSummary.totalResources}</div>
+            <div>已读：{dashboardSummary.doneResources}</div>
+            <div>稍后：{dashboardSummary.laterResources}</div>
+            <div>停留：{dashboardSummary.doneDwellSeconds}s</div>
+            <div>证据：{dashboardSummary.evidenceCount}</div>
+            <div>待消费：{dashboardSummary.pendingEvidenceCount}</div>
+            <div>画像：{dashboardSummary.latestPortraitVersion ?? "-"}</div>
+            <div>
+              可信度：
+              {dashboardSummary.latestPortraitConfidence?.toFixed(2) ?? "-"}
+            </div>
           </div>
 
           <div className="mt-5 text-sm font-medium">待读书单</div>
