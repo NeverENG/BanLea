@@ -13,6 +13,7 @@ import {
   buildLearningDashboardSummary,
   type LearningDashboardSummary,
 } from "@/features/dashboard";
+import { DashboardSummaryPanel } from "@/features/dashboard/DashboardSummaryPanel";
 import {
   createLearningEventService,
   loadLearningLoopStatus,
@@ -41,6 +42,7 @@ import {
   type ReadingListSummary,
   type ReadingListViewItem,
 } from "@/features/reading-list";
+import { ReadingListPanel } from "@/features/reading-list/ReadingListPanel";
 import {
   createLocalTutorCheckQuestion,
   createLocalTutorResourceSuggestions,
@@ -95,11 +97,6 @@ const TRIGGER_REASON_LABELS: Record<string, string> = {
   strong_recommendation_feedback: "推荐强反馈",
   low_quiz_score: "低测验得分",
 };
-
-const READING_STATUS_ACTIONS: { status: ReadingListStatus; label: string }[] = [
-  { status: "done", label: "已读" },
-  { status: "later", label: "稍后" },
-];
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
   total: 0,
@@ -785,83 +782,16 @@ export default function App() {
             {status}
           </div>
 
-          <div className="mt-5 text-sm font-medium">看板摘要</div>
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            <div>资料：{dashboardSummary.totalResources}</div>
-            <div>已读：{dashboardSummary.doneResources}</div>
-            <div>稍后：{dashboardSummary.laterResources}</div>
-            <div>停留：{dashboardSummary.doneDwellSeconds}s</div>
-            <div>证据：{dashboardSummary.evidenceCount}</div>
-            <div>待消费：{dashboardSummary.pendingEvidenceCount}</div>
-            <div>画像：{dashboardSummary.latestPortraitVersion ?? "-"}</div>
-            <div>
-              可信度：
-              {dashboardSummary.latestPortraitConfidence?.toFixed(2) ?? "-"}
-            </div>
-          </div>
+          <DashboardSummaryPanel summary={dashboardSummary} />
 
-          <div className="mt-5 text-sm font-medium">待读书单</div>
-          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>全部：{readingListSummary.total}</div>
-              <div>待读：{readingListSummary.byStatus.todo}</div>
-              <div>稍后：{readingListSummary.byStatus.later}</div>
-              <div>已读：{readingListSummary.byStatus.done}</div>
-              <div className="col-span-2">
-                已读停留：{readingListSummary.doneDwellSeconds}s
-              </div>
-            </div>
-            {readingListItems.length === 0 ? (
-              <div>暂无待读资料</div>
-            ) : (
-              readingListGroups
-                .filter((group) => group.items.length > 0)
-                .map((group) => (
-                  <div className="space-y-2" key={group.status}>
-                    <div className="text-xs font-medium text-[var(--color-ink)]">
-                      {group.label} · {group.items.length}
-                    </div>
-                    {group.items.slice(0, 3).map((item) => (
-                      <div
-                        className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
-                        key={item.id ?? `${item.title}-${item.addedAt}`}
-                      >
-                        <div className="font-medium text-[var(--color-ink)]">
-                          {item.url ? (
-                            <a href={item.url} rel="noreferrer" target="_blank">
-                              {item.title}
-                            </a>
-                          ) : (
-                            item.title
-                          )}
-                        </div>
-                        <div>
-                          {item.kind} · {item.status}
-                        </div>
-                        <div className="mt-2 flex gap-2">
-                          {READING_STATUS_ACTIONS.map((action) => (
-                            <button
-                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] disabled:opacity-50"
-                              disabled={
-                                item.id === null ||
-                                readingListBusyId === item.id ||
-                                item.status === action.status
-                              }
-                              key={action.status}
-                              onClick={() => changeReadingStatus(item, action.status)}
-                              type="button"
-                            >
-                              {action.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))
-            )}
-            <div>{readingListMessage}</div>
-          </div>
+          <ReadingListPanel
+            busyId={readingListBusyId}
+            groups={readingListGroups}
+            items={readingListItems}
+            message={readingListMessage}
+            onChangeStatus={changeReadingStatus}
+            summary={readingListSummary}
+          />
 
           <div className="mt-5 text-sm font-medium">本轮验证</div>
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
