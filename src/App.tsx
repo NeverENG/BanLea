@@ -12,6 +12,7 @@ import {
   type LearningDashboardSummary,
 } from "@/features/dashboard";
 import { DashboardSummaryPanel } from "@/features/dashboard/DashboardSummaryPanel";
+import { DashboardWorkspaceView } from "@/features/dashboard/DashboardWorkspaceView";
 import { loadRuntimeDomainLearningSnapshot } from "@/features/dashboard/runtimeSnapshot";
 import {
   createLearningEventService,
@@ -51,7 +52,7 @@ import type {
 import type { ReadingListStatus } from "@/types/readingList";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
-type WorkspaceView = "tutor" | "reading";
+type WorkspaceView = "tutor" | "reading" | "dashboard";
 
 const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
   { kind: "chat", label: "对话" },
@@ -65,7 +66,14 @@ const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
 const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string }[] = [
   { view: "tutor", label: "辅导" },
   { view: "reading", label: "书单" },
+  { view: "dashboard", label: "看板" },
 ];
+
+const WORKSPACE_VIEW_META: Record<WorkspaceView, { eyebrow: string; title: string }> = {
+  tutor: { eyebrow: "M3 提问式辅导", title: "提问式辅导" },
+  reading: { eyebrow: "M4 书单与看板", title: "书单与学习状态" },
+  dashboard: { eyebrow: "M4 学习看板", title: "学习状态看板" },
+};
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
   total: 0,
@@ -517,10 +525,10 @@ export default function App() {
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
             <div>
               <div className="text-sm text-[var(--color-muted)]">
-                {workspaceView === "reading" ? "M4 书单与看板" : "M3 提问式辅导"}
+                {WORKSPACE_VIEW_META[workspaceView].eyebrow}
               </div>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-                {workspaceView === "reading" ? "书单与学习状态" : "提问式辅导"}
+                {WORKSPACE_VIEW_META[workspaceView].title}
               </h1>
             </div>
             <div className="flex rounded-md bg-[var(--color-soft)] p-1">
@@ -648,7 +656,7 @@ export default function App() {
             </button>
           </div>
             </>
-          ) : (
+          ) : workspaceView === "reading" ? (
             <ReadingListWorkspaceView
               busyId={readingListBusyId}
               groups={readingListGroups}
@@ -656,6 +664,16 @@ export default function App() {
               message={readingListMessage}
               onChangeStatus={changeReadingStatus}
               summary={readingListSummary}
+            />
+          ) : (
+            <DashboardWorkspaceView
+              evidence={evidenceTimeline}
+              isLoading={isLoopStatusLoading}
+              message={loopStatusMessage}
+              onRefresh={() => refreshLoopStatus()}
+              portraits={portraitTimeline}
+              status={loopStatus}
+              summary={dashboardSummary}
             />
           )}
         </section>
