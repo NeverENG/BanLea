@@ -316,6 +316,9 @@ export default function App() {
         createRuntimeLearningService(),
         getPortraitRepository(),
       ]);
+      const replyGenerator = isClaudeReady
+        ? (await import("@/features/tutor/claudeReply")).createClaudeTutorReplyGenerator()
+        : undefined;
       const service = createTutorInputService({
         learningEvents,
         promptContextProvider: ({ domain: targetDomain }) =>
@@ -323,6 +326,7 @@ export default function App() {
             domain: targetDomain,
             portraits: portraitRepository,
           }),
+        replyGenerator,
       });
       const result = await service.sendUserMessage({
         domain,

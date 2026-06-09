@@ -122,7 +122,7 @@ function assistantReplyContent(learning: LearningEventResult): string {
   return "已记录这次问题。当前证据还不够触发画像更新，我会继续积累上下文。";
 }
 
-function defaultTutorReplyGenerator(input: TutorReplyInput): string {
+export function createLocalTutorReply(input: TutorReplyInput): string {
   return assistantReplyContent(input.learning);
 }
 
@@ -222,7 +222,7 @@ export function createTutorInputService(
   options: TutorInputServiceOptions,
 ): TutorInputService {
   const now = options.now ?? defaultNow;
-  const replyGenerator = options.replyGenerator ?? defaultTutorReplyGenerator;
+  const replyGenerator = options.replyGenerator ?? createLocalTutorReply;
 
   return {
     async sendUserMessage(input) {
