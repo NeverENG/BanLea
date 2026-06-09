@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getEvidenceRepository,
   getPortraitRepository,
+  getRankerWeightRepository,
   getReadingListRepository,
   getTutorSessionRepository,
 } from "@/db";
@@ -20,7 +21,12 @@ import {
   type LearningEventService,
   type LearningLoopStatus,
 } from "@/features/events";
-import { buildFeedRecommendationView } from "@/features/feed";
+import {
+  buildFeedRecommendationView,
+  recordFeedRecommendationFeedback,
+  type FeedRecommendationFeedbackKind,
+  type FeedRecommendationItem,
+} from "@/features/feed";
 import { FeedWorkspaceView } from "@/features/feed/FeedWorkspaceView";
 import {
   createApiKeySettingsService,
@@ -161,6 +167,8 @@ export default function App() {
   );
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
+  const [feedBusyId, setFeedBusyId] = useState<string | null>(null);
+  const [feedMessage, setFeedMessage] = useState("未反馈");
   const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
   const [isCheckSaving, setIsCheckSaving] = useState(false);
 
@@ -453,6 +461,36 @@ export default function App() {
     }
   }
 
+  async function recordFeedFeedback(
+    item: FeedRecommendationItem,
+    feedbackKind: FeedRecommendationFeedbackKind,
+  ) {
+    setFeedBusyId(item.id);
+    setFeedMessage(feedbackKind === "click" ? "记录点击中" : "记录跳过中");
+    try {
+      const [learningEvents, rankerWeights] = await Promise.all([
+        createRuntimeLearningService(),
+        getRankerWeightRepository(),
+      ]);
+      const result = await recordFeedRecommendationFeedback({
+        domain,
+        item,
+        kind: feedbackKind,
+        learningEvents,
+        rankerWeights,
+        dwellSeconds: feedbackKind === "click" ? dwellSeconds : undefined,
+      });
+      setLastEvidence(result.learning.evidence);
+      setLastResult(result.learning);
+      setFeedMessage(feedbackKind === "click" ? "已记录点击" : "已记录跳过");
+      await refreshLoopStatus(domain);
+    } catch (error) {
+      setFeedMessage(error instanceof Error ? error.message : "记录反馈失败");
+    } finally {
+      setFeedBusyId(null);
+    }
+  }
+
   async function recordEvent() {
     setIsSaving(true);
     setStatus("写入中");
@@ -697,8 +735,10 @@ export default function App() {
             />
           ) : (
             <FeedWorkspaceView
+              busyId={feedBusyId}
               isLoading={isLoopStatusLoading}
-              message={loopStatusMessage}
+              message={feedMessage}
+              onFeedback={recordFeedFeedback}
               onRefresh={() => refreshLoopStatus()}
               view={feedRecommendationView}
             />

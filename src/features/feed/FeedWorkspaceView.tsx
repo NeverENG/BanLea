@@ -1,8 +1,17 @@
-import type { FeedRecommendationViewModel } from "./index";
+import type {
+  FeedRecommendationFeedbackKind,
+  FeedRecommendationItem,
+  FeedRecommendationViewModel,
+} from "./index";
 
 export interface FeedWorkspaceViewProps {
+  busyId: string | null;
   isLoading: boolean;
   message: string;
+  onFeedback: (
+    item: FeedRecommendationItem,
+    kind: FeedRecommendationFeedbackKind,
+  ) => void;
   onRefresh: () => void;
   view: FeedRecommendationViewModel | null;
 }
@@ -28,8 +37,10 @@ function featureSummary(features: FeedRecommendationViewModel["items"][number]["
 }
 
 export function FeedWorkspaceView({
+  busyId,
   isLoading,
   message,
+  onFeedback,
   onRefresh,
   view,
 }: FeedWorkspaceViewProps) {
@@ -99,6 +110,24 @@ export function FeedWorkspaceView({
               </div>
               <div className="mt-3 text-xs text-[var(--color-muted)]">
                 {featureSummary(item.features)}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] disabled:opacity-50"
+                  disabled={isLoading || busyId === item.id}
+                  onClick={() => onFeedback(item, "click")}
+                  type="button"
+                >
+                  已看
+                </button>
+                <button
+                  className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] disabled:opacity-50"
+                  disabled={isLoading || busyId === item.id}
+                  onClick={() => onFeedback(item, "skip")}
+                  type="button"
+                >
+                  跳过
+                </button>
               </div>
             </article>
           ))}
