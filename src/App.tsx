@@ -34,6 +34,7 @@ import {
   type ReadingListViewItem,
 } from "@/features/reading-list";
 import { ReadingListPanel } from "@/features/reading-list/ReadingListPanel";
+import { ReadingListWorkspaceView } from "@/features/reading-list/ReadingListWorkspaceView";
 import {
   createLocalTutorCheckQuestion,
   createLocalTutorResourceSuggestions,
@@ -50,6 +51,7 @@ import type {
 import type { ReadingListStatus } from "@/types/readingList";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
+type WorkspaceView = "tutor" | "reading";
 
 const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
   { kind: "chat", label: "对话" },
@@ -58,6 +60,11 @@ const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
   { kind: "reading", label: "阅读" },
   { kind: "reco_click", label: "点击" },
   { kind: "reco_skip", label: "跳过" },
+];
+
+const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string }[] = [
+  { view: "tutor", label: "辅导" },
+  { view: "reading", label: "书单" },
 ];
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
@@ -103,6 +110,7 @@ async function runLiveHarnessUpdate(
 
 export default function App() {
   const [domain, setDomain] = useState("computer_science");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("tutor");
   const [kind, setKind] = useState<EventKind>("chat");
   const [content, setContent] = useState("帮我入门 k8s");
   const [tutorInput, setTutorInput] = useState("帮我入门 k8s");
@@ -506,12 +514,36 @@ export default function App() {
         </aside>
 
         <section className="flex flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <div className="border-b border-[var(--color-border)] px-5 py-4">
-            <div className="text-sm text-[var(--color-muted)]">M2 自迭代闭环</div>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">提问式辅导</h1>
+          <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+            <div>
+              <div className="text-sm text-[var(--color-muted)]">
+                {workspaceView === "reading" ? "M4 书单与看板" : "M3 提问式辅导"}
+              </div>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+                {workspaceView === "reading" ? "书单与学习状态" : "提问式辅导"}
+              </h1>
+            </div>
+            <div className="flex rounded-md bg-[var(--color-soft)] p-1">
+              {WORKSPACE_VIEW_OPTIONS.map((option) => (
+                <button
+                  className={`rounded px-3 py-1.5 text-sm ${
+                    workspaceView === option.view
+                      ? "bg-white text-[var(--color-ink)] shadow-sm"
+                      : "text-[var(--color-muted)]"
+                  }`}
+                  key={option.view}
+                  onClick={() => setWorkspaceView(option.view)}
+                  type="button"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex-1 space-y-6 p-5">
+          {workspaceView === "tutor" ? (
+            <>
+              <div className="flex-1 space-y-6 p-5">
             <div className="flex min-h-60 flex-col gap-3 rounded-md border border-[var(--color-border)] bg-white p-4">
               <div className="flex-1 space-y-3">
                 {tutorMessages.length === 0 ? (
@@ -615,6 +647,17 @@ export default function App() {
               {isSaving ? "写入中" : "记录"}
             </button>
           </div>
+            </>
+          ) : (
+            <ReadingListWorkspaceView
+              busyId={readingListBusyId}
+              groups={readingListGroups}
+              items={readingListItems}
+              message={readingListMessage}
+              onChangeStatus={changeReadingStatus}
+              summary={readingListSummary}
+            />
+          )}
         </section>
 
         <aside className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
