@@ -77,6 +77,7 @@ describe("createTutorInputService", () => {
     expect(turn.assistantMessage.content).toContain("练习/验证问题");
     expect(turn.assistantMessage.content).toContain("已记录这次问题");
     expect(turn.resourceSuggestions).toEqual([]);
+    expect(turn.checkQuestion).toBeNull();
     expect(turn.learning.update.status).toBe("skipped");
   });
 
@@ -98,12 +99,17 @@ describe("createTutorInputService", () => {
         reason: "本轮问题建议",
       },
     ]);
+    const checkQuestionProvider = vi.fn(async () => ({
+      topic: "service mesh",
+      prompt: "service mesh 解决什么问题？",
+    }));
     const service = createTutorInputService({
       learningEvents: { recordChat },
       now: () => "2026-06-09T06:00:02.000Z",
       promptContextProvider,
       replyGenerator,
       resourceSuggestionProvider,
+      checkQuestionProvider,
     });
 
     const turn = await service.sendUserMessage({
@@ -134,6 +140,13 @@ describe("createTutorInputService", () => {
       learning,
       promptContext,
     });
+    expect(checkQuestionProvider).toHaveBeenCalledWith({
+      domain: "computer_science",
+      content: "讲一下 service mesh",
+      sessionId: 9,
+      learning,
+      promptContext,
+    });
     expect(turn.assistantMessage.content).toBe("按画像上下文生成的回复");
     expect(turn.assistantMessage.id).toBe("assistant-evidence-18");
     expect(turn.resourceSuggestions).toEqual([
@@ -143,6 +156,10 @@ describe("createTutorInputService", () => {
         reason: "本轮问题建议",
       },
     ]);
+    expect(turn.checkQuestion).toEqual({
+      topic: "service mesh",
+      prompt: "service mesh 解决什么问题？",
+    });
   });
 
   it("空消息不会写入 evidence", async () => {

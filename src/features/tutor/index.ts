@@ -22,6 +22,7 @@ export interface TutorTurnResult {
   userMessage: TutorMessage;
   assistantMessage: TutorMessage;
   resourceSuggestions: TutorResourceSuggestion[];
+  checkQuestion: TutorCheckQuestion | null;
   /** @deprecated use userMessage */
   message: TutorMessage;
   learning: LearningEventResult;
@@ -32,6 +33,7 @@ export interface TutorInputServiceOptions {
   promptContextProvider?: TutorPromptContextProvider;
   replyGenerator?: TutorReplyGenerator;
   resourceSuggestionProvider?: TutorResourceSuggestionProvider;
+  checkQuestionProvider?: TutorCheckQuestionProvider;
   now?: () => string;
 }
 
@@ -106,6 +108,15 @@ export type TutorResourceSuggestionProvider = (
   input: TutorReplyInput,
 ) => Promise<TutorResourceSuggestion[]> | TutorResourceSuggestion[];
 
+export interface TutorCheckQuestion {
+  topic: string;
+  prompt: string;
+}
+
+export type TutorCheckQuestionProvider = (
+  input: TutorReplyInput,
+) => Promise<TutorCheckQuestion | null> | TutorCheckQuestion | null;
+
 export interface TutorReplySections {
   plan: string;
   explanation: string;
@@ -179,6 +190,15 @@ export function createLocalTutorResourceSuggestions(
       reason: "根据本轮提问自动加入待读书单，后续会替换为真实资源检索结果。",
     },
   ];
+}
+
+export function createLocalTutorCheckQuestion(
+  input: TutorReplyInput,
+): TutorCheckQuestion {
+  return {
+    topic: input.content,
+    prompt: `用一句话说明“${input.content}”的核心概念，再举一个你能想到的应用场景。`,
+  };
 }
 
 function dimensionToPromptItem(
@@ -304,11 +324,14 @@ export function createTutorInputService(
         learning,
         promptContext,
       };
-      const [replyContent, resourceSuggestions] = await Promise.all([
+      const [replyContent, resourceSuggestions, checkQuestion] = await Promise.all([
         replyGenerator(replyInput),
         options.resourceSuggestionProvider
           ? options.resourceSuggestionProvider(replyInput)
           : Promise.resolve([]),
+        options.checkQuestionProvider
+          ? options.checkQuestionProvider(replyInput)
+          : Promise.resolve(null),
       ]);
       const assistantCreatedAt = now();
       const userMessage: TutorMessage = {
@@ -332,6 +355,7 @@ export function createTutorInputService(
         userMessage,
         assistantMessage,
         resourceSuggestions,
+        checkQuestion,
         message: userMessage,
         learning,
       };

@@ -30,9 +30,11 @@ import {
   type ReadingListViewItem,
 } from "@/features/reading-list";
 import {
+  createLocalTutorCheckQuestion,
   createLocalTutorResourceSuggestions,
   createTutorInputService,
   loadTutorPromptContext,
+  type TutorCheckQuestion,
   type TutorMessage,
 } from "@/features/tutor";
 import type { Evidence } from "@/types/evidence";
@@ -147,6 +149,8 @@ export default function App() {
   const [readingListItems, setReadingListItems] = useState<ReadingListViewItem[]>([]);
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
+  const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
+  const [isCheckSaving, setIsCheckSaving] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -357,6 +361,7 @@ export default function App() {
           }),
         replyGenerator,
         resourceSuggestionProvider: createLocalTutorResourceSuggestions,
+        checkQuestionProvider: createLocalTutorCheckQuestion,
       });
       const result = await service.sendUserMessage({
         domain,
@@ -371,6 +376,7 @@ export default function App() {
       setTutorInput("");
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
+      setCheckQuestion(result.checkQuestion);
       await addTutorResourceSuggestions({
         domain,
         suggestions: result.resourceSuggestions,
@@ -383,6 +389,30 @@ export default function App() {
       setStatus(error instanceof Error ? error.message : "发送失败");
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function recordCheckResult(score: number) {
+    if (!checkQuestion) {
+      return;
+    }
+    setIsCheckSaving(true);
+    setStatus("记录验证中");
+    try {
+      const service = await createRuntimeLearningService();
+      const result = await service.recordQuiz({
+        domain,
+        topic: checkQuestion.topic,
+        score,
+      });
+      setLastEvidence(result.evidence);
+      setLastResult(result);
+      setStatus("已记录验证");
+      await refreshLoopStatus(domain);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "记录验证失败");
+    } finally {
+      setIsCheckSaving(false);
     }
   }
 
@@ -708,6 +738,35 @@ export default function App() {
               ))
             )}
             <div>{readingListMessage}</div>
+          </div>
+
+          <div className="mt-5 text-sm font-medium">本轮验证</div>
+          <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            {checkQuestion ? (
+              <>
+                <div className="text-[var(--color-ink)]">{checkQuestion.prompt}</div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-50"
+                    disabled={isCheckSaving}
+                    onClick={() => recordCheckResult(0.4)}
+                    type="button"
+                  >
+                    未掌握
+                  </button>
+                  <button
+                    className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    disabled={isCheckSaving}
+                    onClick={() => recordCheckResult(0.85)}
+                    type="button"
+                  >
+                    已掌握
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div>暂无验证问题</div>
+            )}
           </div>
 
           <div className="mt-5 text-sm font-medium">最近证据</div>
