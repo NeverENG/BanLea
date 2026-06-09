@@ -11,6 +11,10 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
+import {
+  loadPortraitTimeline,
+  type PortraitTimelineItem,
+} from "@/features/portrait";
 import { createTutorInputService, type TutorMessage } from "@/features/tutor";
 import type { Evidence } from "@/types/evidence";
 import type {
@@ -113,6 +117,7 @@ export default function App() {
   const [loopStatus, setLoopStatus] = useState<LearningLoopStatus | null>(null);
   const [loopStatusMessage, setLoopStatusMessage] = useState("未读取");
   const [isLoopStatusLoading, setIsLoopStatusLoading] = useState(false);
+  const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -154,10 +159,11 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     setIsLoopStatusLoading(true);
-    loadDomainLoopStatus(domain)
+    loadDomainLoopSnapshot(domain)
       .then((next) => {
         if (!cancelled) {
-          setLoopStatus(next);
+          setLoopStatus(next.status);
+          setPortraitTimeline(next.timeline);
           setLoopStatusMessage("已读取");
         }
       })
@@ -246,26 +252,38 @@ export default function App() {
     });
   }
 
-  async function loadDomainLoopStatus(targetDomain: string): Promise<LearningLoopStatus> {
+  async function loadDomainLoopSnapshot(targetDomain: string): Promise<{
+    status: LearningLoopStatus;
+    timeline: PortraitTimelineItem[];
+  }> {
     const [evidenceRepository, portraitRepository] = await Promise.all([
       getEvidenceRepository(),
       getPortraitRepository(),
     ]);
-    return loadLearningLoopStatus({
-      domain: targetDomain,
-      repositories: {
-        evidence: evidenceRepository,
-        portraits: portraitRepository,
-      },
-    });
+    const repositories = {
+      evidence: evidenceRepository,
+      portraits: portraitRepository,
+    };
+    const [status, timeline] = await Promise.all([
+      loadLearningLoopStatus({
+        domain: targetDomain,
+        repositories,
+      }),
+      loadPortraitTimeline({
+        domain: targetDomain,
+        repository: portraitRepository,
+      }),
+    ]);
+    return { status, timeline };
   }
 
   async function refreshLoopStatus(targetDomain = domain) {
     setIsLoopStatusLoading(true);
     setLoopStatusMessage("读取中");
     try {
-      const next = await loadDomainLoopStatus(targetDomain);
-      setLoopStatus(next);
+      const next = await loadDomainLoopSnapshot(targetDomain);
+      setLoopStatus(next.status);
+      setPortraitTimeline(next.timeline);
       setLoopStatusMessage("已刷新");
     } catch (error) {
       setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
@@ -566,6 +584,27 @@ export default function App() {
             >
               刷新画像状态
             </button>
+          </div>
+
+          <div className="mt-5 text-sm font-medium">版本演化</div>
+          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            {portraitTimeline.length === 0 ? (
+              <div>暂无版本</div>
+            ) : (
+              portraitTimeline.map((item) => (
+                <div
+                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
+                  key={item.id}
+                >
+                  <div className="font-medium text-[var(--color-ink)]">
+                    v{item.version} · 可信度 {item.confidence.toFixed(2)}
+                  </div>
+                  <div>{item.changeSummary ?? "无变更摘要"}</div>
+                  <div>维度数：{item.dimensionCount}</div>
+                  {item.nextFocus ? <div>下一步：{item.nextFocus}</div> : null}
+                </div>
+              ))
+            )}
           </div>
         </aside>
       </main>
