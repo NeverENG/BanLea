@@ -9,6 +9,7 @@ import {
   loadEvidenceTimeline,
   type EvidenceTimelineItem,
 } from "@/features/evidence";
+import { EvidenceStatusPanel } from "@/features/evidence/EvidenceStatusPanel";
 import {
   buildLearningDashboardSummary,
   type LearningDashboardSummary,
@@ -29,6 +30,7 @@ import {
   loadPortraitTimeline,
   type PortraitTimelineItem,
 } from "@/features/portrait";
+import { PortraitStatusPanel } from "@/features/portrait/PortraitStatusPanel";
 import {
   loadLatestTutorHistory,
   saveTutorTurnMessages,
@@ -69,35 +71,6 @@ const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
   { kind: "reco_skip", label: "跳过" },
 ];
 
-function eventSummary(evidence: Evidence | null): string {
-  if (!evidence) {
-    return "尚未记录";
-  }
-  return `#${evidence.id ?? "-"} ${evidence.type} · ${evidence.summary}`;
-}
-
-function loopSummary(result: LearningEventResult | null): string {
-  if (!result) {
-    return "未运行";
-  }
-  if (result.update.status === "updated") {
-    return `已更新画像 v${result.update.portrait.portraitVersion}`;
-  }
-  if (result.update.status === "deferred") {
-    return "已记录证据，等待 API Key 初始化后更新画像";
-  }
-  return "已记录证据，触发条件未满足，继续积累";
-}
-
-const TRIGGER_REASON_LABELS: Record<string, string> = {
-  no_evidence: "无未消费证据",
-  first_portrait: "首次建档",
-  contradiction_signal: "矛盾信号",
-  evidence_count: "证据数量",
-  strong_recommendation_feedback: "推荐强反馈",
-  low_quiz_score: "低测验得分",
-};
-
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
   total: 0,
   byStatus: {
@@ -122,21 +95,6 @@ const EMPTY_DASHBOARD_SUMMARY: LearningDashboardSummary = {
   portraitVersionCount: 0,
   lastActivityAt: null,
 };
-
-function triggerSummary(status: LearningLoopStatus | null): string {
-  if (!status) {
-    return "未读取";
-  }
-  const label = TRIGGER_REASON_LABELS[status.trigger.reason] ?? status.trigger.reason;
-  return status.trigger.shouldRun ? `会触发 · ${label}` : `未触发 · ${label}`;
-}
-
-function portraitSummary(status: LearningLoopStatus | null): string {
-  if (status?.portraitVersion == null) {
-    return "尚未建档";
-  }
-  return `v${status.portraitVersion} · 可信度 ${status.portraitConfidence?.toFixed(2) ?? "-"}`;
-}
 
 function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
@@ -822,77 +780,19 @@ export default function App() {
             )}
           </div>
 
-          <div className="mt-5 text-sm font-medium">最近证据</div>
-          <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            {eventSummary(lastEvidence)}
-          </div>
+          <EvidenceStatusPanel
+            lastEvidence={lastEvidence}
+            lastResult={lastResult}
+            timeline={evidenceTimeline}
+          />
 
-          <div className="mt-5 text-sm font-medium">证据消费</div>
-          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            {evidenceTimeline.length === 0 ? (
-              <div>暂无证据</div>
-            ) : (
-              evidenceTimeline.map((item) => (
-                <div
-                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
-                  key={`${item.id ?? "new"}-${item.createdAt}`}
-                >
-                  <div className="font-medium text-[var(--color-ink)]">
-                    #{item.id ?? "-"} {item.type}
-                  </div>
-                  <div>{item.summary}</div>
-                  <div>
-                    {item.status === "consumed"
-                      ? `已消费到 v${item.consumedInVersion}`
-                      : "未消费"}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="mt-5 text-sm font-medium">闭环状态</div>
-          <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            {loopSummary(lastResult)}
-          </div>
-
-          <div className="mt-5 text-sm font-medium">画像状态</div>
-          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            <div>{portraitSummary(loopStatus)}</div>
-            <div>未消费证据：{loopStatus?.unconsumedEvidenceCount ?? "-"}</div>
-            <div>触发判断：{triggerSummary(loopStatus)}</div>
-            <div>状态：{isLoopStatusLoading ? "读取中" : loopStatusMessage}</div>
-            <div>变更：{loopStatus?.changeSummary ?? "无"}</div>
-            <button
-              className="mt-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
-              disabled={isLoopStatusLoading}
-              onClick={() => refreshLoopStatus()}
-              type="button"
-            >
-              刷新画像状态
-            </button>
-          </div>
-
-          <div className="mt-5 text-sm font-medium">版本演化</div>
-          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            {portraitTimeline.length === 0 ? (
-              <div>暂无版本</div>
-            ) : (
-              portraitTimeline.map((item) => (
-                <div
-                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
-                  key={item.id}
-                >
-                  <div className="font-medium text-[var(--color-ink)]">
-                    v{item.version} · 可信度 {item.confidence.toFixed(2)}
-                  </div>
-                  <div>{item.changeSummary ?? "无变更摘要"}</div>
-                  <div>维度数：{item.dimensionCount}</div>
-                  {item.nextFocus ? <div>下一步：{item.nextFocus}</div> : null}
-                </div>
-              ))
-            )}
-          </div>
+          <PortraitStatusPanel
+            isLoading={isLoopStatusLoading}
+            message={loopStatusMessage}
+            onRefresh={() => refreshLoopStatus()}
+            status={loopStatus}
+            timeline={portraitTimeline}
+          />
         </aside>
       </main>
     </div>
