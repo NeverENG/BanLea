@@ -20,6 +20,8 @@ import {
   type LearningEventService,
   type LearningLoopStatus,
 } from "@/features/events";
+import { buildFeedRecommendationView } from "@/features/feed";
+import { FeedWorkspaceView } from "@/features/feed/FeedWorkspaceView";
 import {
   createApiKeySettingsService,
   type ApiKeyStatus,
@@ -52,7 +54,7 @@ import type {
 import type { ReadingListStatus } from "@/types/readingList";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
-type WorkspaceView = "tutor" | "reading" | "dashboard";
+type WorkspaceView = "tutor" | "reading" | "dashboard" | "feed";
 
 const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
   { kind: "chat", label: "对话" },
@@ -67,12 +69,14 @@ const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string }[] = [
   { view: "tutor", label: "辅导" },
   { view: "reading", label: "书单" },
   { view: "dashboard", label: "看板" },
+  { view: "feed", label: "推荐" },
 ];
 
 const WORKSPACE_VIEW_META: Record<WorkspaceView, { eyebrow: string; title: string }> = {
   tutor: { eyebrow: "M3 提问式辅导", title: "提问式辅导" },
   reading: { eyebrow: "M4 书单与看板", title: "书单与学习状态" },
   dashboard: { eyebrow: "M4 学习看板", title: "学习状态看板" },
+  feed: { eyebrow: "M5 推荐引擎", title: "猜你想学 / 猜你想看" },
 };
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
@@ -139,6 +143,9 @@ export default function App() {
   const [isKeyBusy, setIsKeyBusy] = useState(false);
   const [isClaudeReady, setIsClaudeReady] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [domainSnapshot, setDomainSnapshot] = useState<DomainLearningSnapshot | null>(
+    null,
+  );
   const [loopStatus, setLoopStatus] = useState<LearningLoopStatus | null>(null);
   const [loopStatusMessage, setLoopStatusMessage] = useState("未读取");
   const [isLoopStatusLoading, setIsLoopStatusLoading] = useState(false);
@@ -164,7 +171,18 @@ export default function App() {
     [kind],
   );
 
+  const feedRecommendationView = useMemo(
+    () =>
+      domainSnapshot
+        ? buildFeedRecommendationView({
+            snapshot: domainSnapshot,
+          })
+        : null,
+    [domainSnapshot],
+  );
+
   function applyDomainLearningSnapshot(snapshot: DomainLearningSnapshot) {
+    setDomainSnapshot(snapshot);
     setLoopStatus(snapshot.status);
     setPortraitTimeline(snapshot.portraitTimeline);
     setEvidenceTimeline(snapshot.evidenceTimeline);
@@ -667,7 +685,7 @@ export default function App() {
               onRefresh={() => refreshLoopStatus()}
               summary={readingListSummary}
             />
-          ) : (
+          ) : workspaceView === "dashboard" ? (
             <DashboardWorkspaceView
               evidence={evidenceTimeline}
               isLoading={isLoopStatusLoading}
@@ -676,6 +694,13 @@ export default function App() {
               portraits={portraitTimeline}
               status={loopStatus}
               summary={dashboardSummary}
+            />
+          ) : (
+            <FeedWorkspaceView
+              isLoading={isLoopStatusLoading}
+              message={loopStatusMessage}
+              onRefresh={() => refreshLoopStatus()}
+              view={feedRecommendationView}
             />
           )}
         </section>
