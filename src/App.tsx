@@ -6,6 +6,10 @@ import {
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
 import type { Evidence } from "@/types/evidence";
+import type {
+  HarnessRunRepositories,
+  TriggeredHarnessUpdateResult,
+} from "@/core/harness";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
 
@@ -38,6 +42,22 @@ function loopSummary(result: LearningEventResult | null): string {
   return "已记录证据，触发条件未满足，继续积累";
 }
 
+function scopeForDomain(domain: string): "global" | "domain" {
+  return domain === "global" ? "global" : "domain";
+}
+
+async function runLiveHarnessUpdate(
+  evidence: Evidence,
+  repositories: HarnessRunRepositories,
+): Promise<TriggeredHarnessUpdateResult> {
+  const { runHarnessUpdateIfTriggered } = await import("@/core/harness");
+  return runHarnessUpdateIfTriggered({
+    scope: scopeForDomain(evidence.domain),
+    domain: evidence.domain,
+    repositories,
+  });
+}
+
 export default function App() {
   const [domain, setDomain] = useState("computer_science");
   const [kind, setKind] = useState<EventKind>("chat");
@@ -55,6 +75,7 @@ export default function App() {
   });
   const [apiKeyMessage, setApiKeyMessage] = useState("未设置");
   const [isKeyBusy, setIsKeyBusy] = useState(false);
+  const [isClaudeReady, setIsClaudeReady] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -67,11 +88,15 @@ export default function App() {
     let cancelled = false;
     setIsKeyBusy(true);
     apiKeyService
-      .loadStatus()
+      .initializeSavedKey()
       .then((next) => {
         if (!cancelled) {
-          setApiKeyStatus(next);
-          setApiKeyMessage(next.configured ? "已保存" : "未设置");
+          setApiKeyStatus({
+            configured: next.configured,
+            maskedKey: next.maskedKey,
+          });
+          setIsClaudeReady(next.clientInitialized);
+          setApiKeyMessage(next.clientInitialized ? "已初始化" : "未设置");
         }
       })
       .catch((error: unknown) => {
@@ -93,10 +118,15 @@ export default function App() {
     setIsKeyBusy(true);
     setApiKeyMessage("保存中");
     try {
-      const next = await apiKeyService.save(apiKeyInput);
-      setApiKeyStatus(next);
+      await apiKeyService.save(apiKeyInput);
+      const next = await apiKeyService.initializeSavedKey();
+      setApiKeyStatus({
+        configured: next.configured,
+        maskedKey: next.maskedKey,
+      });
+      setIsClaudeReady(next.clientInitialized);
       setApiKeyInput("");
-      setApiKeyMessage("已保存");
+      setApiKeyMessage(next.clientInitialized ? "已保存并初始化" : "已保存");
     } catch (error) {
       setApiKeyMessage(error instanceof Error ? error.message : "保存失败");
     } finally {
@@ -110,6 +140,7 @@ export default function App() {
     try {
       const next = await apiKeyService.delete();
       setApiKeyStatus(next);
+      setIsClaudeReady(false);
       setApiKeyInput("");
       setApiKeyMessage("已删除");
     } catch (error) {
@@ -122,9 +153,13 @@ export default function App() {
   async function refreshKeyStatus() {
     setIsKeyBusy(true);
     try {
-      const next = await apiKeyService.loadStatus();
-      setApiKeyStatus(next);
-      setApiKeyMessage(next.configured ? "已保存" : "未设置");
+      const next = await apiKeyService.initializeSavedKey();
+      setApiKeyStatus({
+        configured: next.configured,
+        maskedKey: next.maskedKey,
+      });
+      setIsClaudeReady(next.clientInitialized);
+      setApiKeyMessage(next.clientInitialized ? "已初始化" : "未设置");
     } catch (error) {
       setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
     } finally {
@@ -140,11 +175,15 @@ export default function App() {
         getEvidenceRepository(),
         getPortraitRepository(),
       ]);
+      const repositories = {
+        evidence: evidenceRepository,
+        portraits: portraitRepository,
+      };
       const service = createLearningEventService({
-        repositories: {
-          evidence: evidenceRepository,
-          portraits: portraitRepository,
-        },
+        repositories,
+        updateAfterEvidence: isClaudeReady
+          ? (evidence) => runLiveHarnessUpdate(evidence, repositories)
+          : undefined,
       });
       let result: LearningEventResult;
 
@@ -302,6 +341,7 @@ export default function App() {
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
             <div className="text-sm text-[var(--color-muted)]">
               {apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}
+              {isClaudeReady ? " · Claude 已初始化" : ""}
             </div>
             <input
               className="mt-3 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"

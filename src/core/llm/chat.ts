@@ -1,6 +1,11 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { getClient, MODELS, type ModelTier } from "./client";
+import {
+  getClient,
+  MODELS,
+  type ContentBlock,
+  type MessageParam,
+  type ModelTier,
+} from "./client";
 
 /**
  * Claude 调用封装（§8.3）：
@@ -13,12 +18,12 @@ export interface AskOptions {
   /** 模型档位，默认 deep(opus) */
   tier?: ModelTier;
   system?: string;
-  messages: Anthropic.MessageParam[];
+  messages: MessageParam[];
   maxTokens?: number;
   effort?: "low" | "medium" | "high" | "max";
 }
 
-function textOf(content: Anthropic.ContentBlock[]): string {
+function textOf(content: ContentBlock[]): string {
   return content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
 }
 

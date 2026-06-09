@@ -1,9 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { initClient, resetClient } from "@/core/llm/client";
 import {
   createApiKeySettingsService,
   maskApiKey,
   type ApiKeyStore,
 } from "@/features/settings/apiKeySettings";
+
+vi.mock("@/core/llm/client", () => ({
+  initClient: vi.fn(),
+  resetClient: vi.fn(),
+}));
 
 function store(initial: string | null = null) {
   let key = initial;
@@ -20,6 +26,10 @@ function store(initial: string | null = null) {
 }
 
 describe("apiKeySettings", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("maskApiKey 不暴露完整 key", () => {
     expect(maskApiKey("sk-ant-api03-abcdef123456")).toBe("sk-ant-…3456");
     expect(maskApiKey("short")).toBe("••••");
@@ -47,6 +57,32 @@ describe("apiKeySettings", () => {
     });
   });
 
+  it("initializeSavedKey 用 keychain 中的 key 初始化 Claude client", async () => {
+    const service = createApiKeySettingsService(store("sk-ant-api03-abcdef123456"));
+
+    const status = await service.initializeSavedKey();
+
+    expect(initClient).toHaveBeenCalledWith("sk-ant-api03-abcdef123456");
+    expect(status).toEqual({
+      configured: true,
+      maskedKey: "sk-ant-…3456",
+      clientInitialized: true,
+    });
+  });
+
+  it("initializeSavedKey 在未设置 key 时不初始化 client", async () => {
+    const service = createApiKeySettingsService(store());
+
+    const status = await service.initializeSavedKey();
+
+    expect(initClient).not.toHaveBeenCalled();
+    expect(status).toEqual({
+      configured: false,
+      maskedKey: null,
+      clientInitialized: false,
+    });
+  });
+
   it("空 key 被拒绝", async () => {
     const service = createApiKeySettingsService(store());
 
@@ -60,6 +96,7 @@ describe("apiKeySettings", () => {
     const status = await service.delete();
 
     expect(apiKeyStore.delete).toHaveBeenCalledTimes(1);
+    expect(resetClient).toHaveBeenCalledTimes(1);
     expect(status).toEqual({
       configured: false,
       maskedKey: null,
