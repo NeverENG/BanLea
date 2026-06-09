@@ -87,6 +87,7 @@ describe("createClaudeTutorReplyGenerator", () => {
     );
     const request = model.ask.mock.calls[0][0];
     expect(request.system).toContain("communication_style: 直接、结构化");
+    expect(request.system).toContain("学习计划、关键解释、练习/验证问题");
     expect(request.messages[0]).toEqual(
       expect.objectContaining({
         role: "user",

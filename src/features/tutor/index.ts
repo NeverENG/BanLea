@@ -92,6 +92,13 @@ export type TutorReplyGenerator = (
   input: TutorReplyInput,
 ) => Promise<string> | string;
 
+export interface TutorReplySections {
+  plan: string;
+  explanation: string;
+  checkQuestion: string;
+  statusNote?: string;
+}
+
 const defaultNow = () => new Date().toISOString();
 
 function normalizeContent(content: string): string {
@@ -122,8 +129,26 @@ function assistantReplyContent(learning: LearningEventResult): string {
   return "已记录这次问题。当前证据还不够触发画像更新，我会继续积累上下文。";
 }
 
+export function formatTutorReplySections(sections: TutorReplySections): string {
+  const blocks = [
+    ["学习计划", sections.plan],
+    ["关键解释", sections.explanation],
+    ["练习/验证问题", sections.checkQuestion],
+  ];
+
+  if (sections.statusNote) {
+    blocks.push(["状态", sections.statusNote]);
+  }
+
+  return blocks.map(([title, body]) => `${title}\n${body}`).join("\n\n");
+}
+
 export function createLocalTutorReply(input: TutorReplyInput): string {
-  return assistantReplyContent(input.learning);
+  return formatTutorReplySections({
+    plan: "先把问题拆成核心概念、最小可运行例子和一个验证动作；学完后用自己的话复述一遍。",
+    explanation: assistantReplyContent(input.learning),
+    checkQuestion: `请先回答：关于“${input.content}”，你现在最不确定的是定义、工作流程，还是实际应用？`,
+  });
 }
 
 function dimensionToPromptItem(

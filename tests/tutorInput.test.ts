@@ -63,14 +63,19 @@ describe("createTutorInputService", () => {
       evidenceId: 12,
     });
     expect(turn.userMessage).toEqual(turn.message);
-    expect(turn.assistantMessage).toEqual({
-      id: "assistant-evidence-12",
-      role: "assistant",
-      content: "已记录这次问题。当前证据还不够触发画像更新，我会继续积累上下文。",
-      domain: "computer_science",
-      createdAt: "2026-06-09T06:00:01.000Z",
-      evidenceId: 12,
-    });
+    expect(turn.assistantMessage).toEqual(
+      expect.objectContaining({
+        id: "assistant-evidence-12",
+        role: "assistant",
+        domain: "computer_science",
+        createdAt: "2026-06-09T06:00:01.000Z",
+        evidenceId: 12,
+      }),
+    );
+    expect(turn.assistantMessage.content).toContain("学习计划");
+    expect(turn.assistantMessage.content).toContain("关键解释");
+    expect(turn.assistantMessage.content).toContain("练习/验证问题");
+    expect(turn.assistantMessage.content).toContain("已记录这次问题");
     expect(turn.learning.update.status).toBe("skipped");
   });
 

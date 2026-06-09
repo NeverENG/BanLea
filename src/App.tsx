@@ -450,7 +450,7 @@ export default function App() {
                 ) : (
                   tutorMessages.map((message) => (
                     <div
-                      className={`max-w-[78%] rounded-md px-3 py-2 text-sm leading-6 ${
+                      className={`max-w-[78%] whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-6 ${
                         message.role === "user"
                           ? "ml-auto bg-[var(--color-accent)] text-white"
                           : "mr-auto bg-[var(--color-soft)] text-[var(--color-ink)]"
