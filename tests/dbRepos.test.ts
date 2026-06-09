@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
+import { createRankerWeightRepository } from "@/db/rankerWeightRepo";
 import { createReadingListRepository } from "@/db/readingListRepo";
 import { createTutorSessionRepository } from "@/db/tutorSessionRepo";
 import type { QueryResult, SqlExecutor } from "@/db/types";
@@ -278,6 +279,80 @@ describe("readingListRepository", () => {
       120,
     ]);
     expect(db.selectCalls[0].bindValues).toEqual([31]);
+  });
+});
+
+describe("rankerWeightRepository", () => {
+  it("list 读取已知特征权重并过滤未知特征", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          feature: "interest_match",
+          weight: 1.4,
+          updated_at: "2026-06-09T10:00:00.000Z",
+        },
+        {
+          feature: "unknown_feature",
+          weight: 9,
+          updated_at: "2026-06-09T10:00:00.000Z",
+        },
+      ],
+    ]);
+
+    const rows = await createRankerWeightRepository(db).list();
+
+    expect(rows).toEqual([
+      {
+        feature: "interest_match",
+        weight: 1.4,
+        updatedAt: "2026-06-09T10:00:00.000Z",
+      },
+    ]);
+    expect(db.selectCalls[0].query).toContain("FROM ranker_weights");
+  });
+
+  it("getWeights 返回 feature 到 weight 的映射", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          feature: "interest_match",
+          weight: 1.4,
+          updated_at: "2026-06-09T10:00:00.000Z",
+        },
+        {
+          feature: "novelty",
+          weight: 0.7,
+          updated_at: "2026-06-09T10:00:00.000Z",
+        },
+      ],
+    ]);
+
+    const weights = await createRankerWeightRepository(db).getWeights();
+
+    expect(weights).toEqual({
+      interest_match: 1.4,
+      novelty: 0.7,
+    });
+  });
+
+  it("upsertMany 只写入已知且有数值的权重", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }, { rowsAffected: 1 }]);
+    const repo = createRankerWeightRepository(db);
+
+    await repo.upsertMany(
+      {
+        interest_match: 1.5,
+        novelty: 0.8,
+      },
+      "2026-06-09T10:00:00.000Z",
+    );
+
+    expect(db.executeCalls).toHaveLength(2);
+    expect(db.executeCalls[0].query).toContain("ON CONFLICT(feature)");
+    expect(db.executeCalls.map((call) => call.bindValues)).toEqual([
+      ["interest_match", 1.5, "2026-06-09T10:00:00.000Z"],
+      ["novelty", 0.8, "2026-06-09T10:00:00.000Z"],
+    ]);
   });
 });
 
