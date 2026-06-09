@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildRecommendationCandidates,
   DEFAULT_RECOMMENDER_WEIGHTS,
   rankRecommendations,
   scoreRecommendation,
@@ -134,5 +135,72 @@ describe("recommender ranker", () => {
     });
 
     expect(next.novelty).toBe(1);
+  });
+
+  it("builds learn candidates from topic seeds", () => {
+    const candidates = buildRecommendationCandidates({
+      domain: "computer_science",
+      topics: [
+        {
+          topic: "k8s networking",
+          source: "portrait_next_focus",
+          reason: "next focus",
+        },
+        {
+          topic: "container basics",
+          source: "recent_topic",
+          strength: 0.9,
+        },
+      ],
+    });
+
+    expect(candidates.map((item) => item.kind)).toEqual(["learn", "learn"]);
+    expect(candidates.map((item) => item.topic)).toContain("k8s networking");
+    expect(candidates[0].score).toBeGreaterThan(0);
+  });
+
+  it("builds read candidates from unfinished reading list items", () => {
+    const candidates = buildRecommendationCandidates({
+      domain: "computer_science",
+      readings: [
+        { title: "K8s intro", status: "todo" },
+        { title: "Finished doc", status: "done" },
+        { title: "Advanced lab", status: "later" },
+      ],
+    });
+
+    expect(candidates.map((item) => item.kind)).toEqual(["read", "read"]);
+    expect(candidates.map((item) => item.topic)).not.toContain("Finished doc");
+  });
+
+  it("filters blank seeds and deduplicates by kind and topic", () => {
+    const candidates = buildRecommendationCandidates({
+      domain: "computer_science",
+      topics: [
+        { topic: "  ", source: "manual" },
+        { topic: "K8s", source: "manual", features: { novelty: 0.2 } },
+        { topic: " k8s ", source: "recent_topic", features: { novelty: 0.8 } },
+      ],
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].topic).toBe("K8s");
+    expect(candidates[0].features.novelty).toBe(0.8);
+    expect(candidates[0].features.mentioned).toBe(1);
+  });
+
+  it("returns ranked candidates within the requested limit", () => {
+    const candidates = buildRecommendationCandidates({
+      domain: "computer_science",
+      limit: 2,
+      topics: [
+        { topic: "low", source: "manual" },
+        { topic: "high", source: "recent_topic", strength: 1 },
+      ],
+      readings: [{ title: "read me", status: "reading" }],
+    });
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0].score).toBeGreaterThanOrEqual(candidates[1].score);
   });
 });
