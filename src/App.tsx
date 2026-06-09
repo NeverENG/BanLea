@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { getEvidenceRepository, getPortraitRepository } from "@/db";
 import {
+  loadEvidenceTimeline,
+  type EvidenceTimelineItem,
+} from "@/features/evidence";
+import {
   createLearningEventService,
   loadLearningLoopStatus,
   type LearningEventResult,
@@ -118,6 +122,7 @@ export default function App() {
   const [loopStatusMessage, setLoopStatusMessage] = useState("未读取");
   const [isLoopStatusLoading, setIsLoopStatusLoading] = useState(false);
   const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
+  const [evidenceTimeline, setEvidenceTimeline] = useState<EvidenceTimelineItem[]>([]);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -164,6 +169,7 @@ export default function App() {
         if (!cancelled) {
           setLoopStatus(next.status);
           setPortraitTimeline(next.timeline);
+          setEvidenceTimeline(next.evidence);
           setLoopStatusMessage("已读取");
         }
       })
@@ -255,6 +261,7 @@ export default function App() {
   async function loadDomainLoopSnapshot(targetDomain: string): Promise<{
     status: LearningLoopStatus;
     timeline: PortraitTimelineItem[];
+    evidence: EvidenceTimelineItem[];
   }> {
     const [evidenceRepository, portraitRepository] = await Promise.all([
       getEvidenceRepository(),
@@ -264,7 +271,7 @@ export default function App() {
       evidence: evidenceRepository,
       portraits: portraitRepository,
     };
-    const [status, timeline] = await Promise.all([
+    const [status, timeline, evidence] = await Promise.all([
       loadLearningLoopStatus({
         domain: targetDomain,
         repositories,
@@ -273,8 +280,12 @@ export default function App() {
         domain: targetDomain,
         repository: portraitRepository,
       }),
+      loadEvidenceTimeline({
+        domain: targetDomain,
+        repository: evidenceRepository,
+      }),
     ]);
-    return { status, timeline };
+    return { status, timeline, evidence };
   }
 
   async function refreshLoopStatus(targetDomain = domain) {
@@ -284,6 +295,7 @@ export default function App() {
       const next = await loadDomainLoopSnapshot(targetDomain);
       setLoopStatus(next.status);
       setPortraitTimeline(next.timeline);
+      setEvidenceTimeline(next.evidence);
       setLoopStatusMessage("已刷新");
     } catch (error) {
       setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
@@ -562,6 +574,30 @@ export default function App() {
           <div className="mt-5 text-sm font-medium">最近证据</div>
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
             {eventSummary(lastEvidence)}
+          </div>
+
+          <div className="mt-5 text-sm font-medium">证据消费</div>
+          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            {evidenceTimeline.length === 0 ? (
+              <div>暂无证据</div>
+            ) : (
+              evidenceTimeline.map((item) => (
+                <div
+                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
+                  key={`${item.id ?? "new"}-${item.createdAt}`}
+                >
+                  <div className="font-medium text-[var(--color-ink)]">
+                    #{item.id ?? "-"} {item.type}
+                  </div>
+                  <div>{item.summary}</div>
+                  <div>
+                    {item.status === "consumed"
+                      ? `已消费到 v${item.consumedInVersion}`
+                      : "未消费"}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="mt-5 text-sm font-medium">闭环状态</div>
