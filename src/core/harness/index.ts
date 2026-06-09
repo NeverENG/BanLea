@@ -8,7 +8,7 @@ import type { EvidenceRepository } from "@/db/evidenceRepo";
 import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
 import type { HarnessTriggerPolicy } from "@/config";
 import { DIMENSION_META } from "@/types/dimensions";
-import type { Evidence } from "@/types/evidence";
+import type { Evidence, NewEvidence } from "@/types/evidence";
 import {
   dimensionValueSchema,
   MASTER_DIMENSION_KEYS,
@@ -79,6 +79,11 @@ export interface RunHarnessUpdateIfTriggeredInput extends RunHarnessUpdateInput 
   policy?: HarnessTriggerPolicy;
 }
 
+export interface RecordEvidenceAndMaybeUpdateInput
+  extends RunHarnessUpdateIfTriggeredInput {
+  evidence: NewEvidence;
+}
+
 export type HarnessUpdateResult =
   | {
       status: "skipped";
@@ -110,6 +115,11 @@ export type TriggeredHarnessUpdateResult =
       consumedEvidenceIds: number[];
       consumedCount: number;
     };
+
+export interface RecordEvidenceAndMaybeUpdateResult {
+  evidence: Evidence;
+  update: TriggeredHarnessUpdateResult;
+}
 
 const DEFAULT_NOW = () => new Date().toISOString();
 
@@ -448,5 +458,16 @@ export async function runHarnessUpdateIfTriggered(
   return {
     ...result,
     trigger,
+  };
+}
+
+export async function recordEvidenceAndMaybeUpdate(
+  input: RecordEvidenceAndMaybeUpdateInput,
+): Promise<RecordEvidenceAndMaybeUpdateResult> {
+  const insertedEvidence = await input.repositories.evidence.insert(input.evidence);
+  const update = await runHarnessUpdateIfTriggered(input);
+  return {
+    evidence: insertedEvidence,
+    update,
   };
 }

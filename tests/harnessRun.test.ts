@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import type { AskOptions } from "@/core/llm";
 import {
+  recordEvidenceAndMaybeUpdate,
   runHarnessUpdate,
   runHarnessUpdateIfTriggered,
   type HarnessModel,
@@ -80,7 +81,11 @@ function repositories(args: {
     nextVersion: vi.fn(),
   };
   const evidenceRepo: EvidenceRepository = {
-    insert: vi.fn(),
+    insert: vi.fn(async (input) => ({
+      ...input,
+      id: 99,
+      consumedInVersion: null,
+    })),
     listUnconsumed: vi.fn(async () => args.pending),
     listByDomain: vi.fn(),
     markConsumed: vi.fn(async (ids: number[]) => ids.length),
@@ -220,5 +225,76 @@ describe("runHarnessUpdateIfTriggered", () => {
     expect(repos.evidence.listUnconsumed).toHaveBeenCalledTimes(1);
     expect(repos.portraits.save).toHaveBeenCalledTimes(1);
     expect(repos.evidence.markConsumed).toHaveBeenCalledWith([8], 1);
+  });
+});
+
+describe("recordEvidenceAndMaybeUpdate", () => {
+  it("先写入证据；触发条件未满足时不更新画像", async () => {
+    const repos = repositories({
+      latest: record(portrait()),
+      pending: [evidence({ id: 99, type: "chat" })],
+    });
+    const model = mockModel<PortraitPatch>({
+      dimensions: {},
+      changeSummary: "不应调用",
+    });
+
+    const result = await recordEvidenceAndMaybeUpdate({
+      scope: "domain",
+      domain: "computer_science",
+      repositories: repos,
+      model,
+      evidence: {
+        domain: "computer_science",
+        type: "chat",
+        summary: "问了一个 k8s 问题",
+        payload: { content: "k8s 是什么" },
+        createdAt: now(),
+      },
+      policy: {
+        minEvidenceCount: 3,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+      },
+    });
+
+    expect(result.evidence.id).toBe(99);
+    expect(result.update.status).toBe("skipped");
+    expect(repos.evidence.insert).toHaveBeenCalledTimes(1);
+    expect(repos.portraits.save).not.toHaveBeenCalled();
+    expect(model.ask).not.toHaveBeenCalled();
+  });
+
+  it("先写入证据；满足触发条件时更新画像并消费证据", async () => {
+    const repos = repositories({
+      latest: null,
+      pending: [evidence({ id: 99, type: "self_report" })],
+    });
+    const model = mockModel(portrait());
+
+    const result = await recordEvidenceAndMaybeUpdate({
+      scope: "domain",
+      domain: "computer_science",
+      repositories: repos,
+      model,
+      now,
+      evidence: {
+        domain: "computer_science",
+        type: "self_report",
+        summary: "我想学习云原生",
+        payload: { statement: "我想学习云原生" },
+        createdAt: now(),
+      },
+    });
+
+    expect(result.evidence.id).toBe(99);
+    expect(result.update.status).toBe("updated");
+    if (result.update.status === "updated") {
+      expect(result.update.trigger.reason).toBe("first_portrait");
+      expect(result.update.consumedEvidenceIds).toEqual([99]);
+    }
+    expect(repos.evidence.insert).toHaveBeenCalledTimes(1);
+    expect(repos.portraits.save).toHaveBeenCalledTimes(1);
+    expect(repos.evidence.markConsumed).toHaveBeenCalledWith([99], 1);
   });
 });
