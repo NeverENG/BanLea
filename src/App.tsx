@@ -32,7 +32,8 @@ import {
 import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
-  loadReadingList,
+  loadReadingListOverview,
+  type ReadingListSummary,
   type ReadingListViewItem,
 } from "@/features/reading-list";
 import {
@@ -95,6 +96,17 @@ const READING_STATUS_ACTIONS: { status: ReadingListStatus; label: string }[] = [
   { status: "later", label: "稍后" },
 ];
 
+const EMPTY_READING_SUMMARY: ReadingListSummary = {
+  total: 0,
+  byStatus: {
+    todo: 0,
+    reading: 0,
+    done: 0,
+    later: 0,
+  },
+  doneDwellSeconds: 0,
+};
+
 function triggerSummary(status: LearningLoopStatus | null): string {
   if (!status) {
     return "未读取";
@@ -154,6 +166,9 @@ export default function App() {
   const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
   const [evidenceTimeline, setEvidenceTimeline] = useState<EvidenceTimelineItem[]>([]);
   const [readingListItems, setReadingListItems] = useState<ReadingListViewItem[]>([]);
+  const [readingListSummary, setReadingListSummary] = useState<ReadingListSummary>(
+    EMPTY_READING_SUMMARY,
+  );
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
   const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
@@ -205,7 +220,8 @@ export default function App() {
           setLoopStatus(next.status);
           setPortraitTimeline(next.timeline);
           setEvidenceTimeline(next.evidence);
-          setReadingListItems(next.readingList);
+          setReadingListItems(next.readingList.items);
+          setReadingListSummary(next.readingList.summary);
           setTutorMessages(next.tutorHistory.messages);
           setTutorSessionId(next.tutorHistory.session?.id ?? null);
           setLoopStatusMessage("已读取");
@@ -300,7 +316,7 @@ export default function App() {
     status: LearningLoopStatus;
     timeline: PortraitTimelineItem[];
     evidence: EvidenceTimelineItem[];
-    readingList: ReadingListViewItem[];
+    readingList: Awaited<ReturnType<typeof loadReadingListOverview>>;
     tutorHistory: TutorHistorySnapshot;
   }> {
     const [
@@ -331,7 +347,7 @@ export default function App() {
         domain: targetDomain,
         repository: evidenceRepository,
       }),
-      loadReadingList({
+      loadReadingListOverview({
         domain: targetDomain,
         repository: readingListRepository,
       }),
@@ -351,7 +367,8 @@ export default function App() {
       setLoopStatus(next.status);
       setPortraitTimeline(next.timeline);
       setEvidenceTimeline(next.evidence);
-      setReadingListItems(next.readingList);
+      setReadingListItems(next.readingList.items);
+      setReadingListSummary(next.readingList.summary);
       setTutorMessages(next.tutorHistory.messages);
       setTutorSessionId(next.tutorHistory.session?.id ?? null);
       setLoopStatusMessage("已刷新");
@@ -730,6 +747,15 @@ export default function App() {
 
           <div className="mt-5 text-sm font-medium">待读书单</div>
           <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div>全部：{readingListSummary.total}</div>
+              <div>待读：{readingListSummary.byStatus.todo}</div>
+              <div>稍后：{readingListSummary.byStatus.later}</div>
+              <div>已读：{readingListSummary.byStatus.done}</div>
+              <div className="col-span-2">
+                已读停留：{readingListSummary.doneDwellSeconds}s
+              </div>
+            </div>
             {readingListItems.length === 0 ? (
               <div>暂无待读资料</div>
             ) : (

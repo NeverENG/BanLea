@@ -41,6 +41,19 @@ export interface ReadingListViewItem {
   addedAt: string;
 }
 
+export type ReadingListStatusCounts = Record<ReadingListStatus, number>;
+
+export interface ReadingListSummary {
+  total: number;
+  byStatus: ReadingListStatusCounts;
+  doneDwellSeconds: number;
+}
+
+export interface ReadingListOverview {
+  items: ReadingListViewItem[];
+  summary: ReadingListSummary;
+}
+
 const defaultNow = () => new Date().toISOString();
 
 function toViewItem(item: ReadingListItem): ReadingListViewItem {
@@ -51,6 +64,33 @@ function toViewItem(item: ReadingListItem): ReadingListViewItem {
     status: item.status,
     url: item.url,
     addedAt: item.addedAt,
+  };
+}
+
+function emptyStatusCounts(): ReadingListStatusCounts {
+  return {
+    todo: 0,
+    reading: 0,
+    done: 0,
+    later: 0,
+  };
+}
+
+export function summarizeReadingList(items: ReadingListItem[]): ReadingListSummary {
+  const byStatus = emptyStatusCounts();
+  let doneDwellSeconds = 0;
+
+  for (const item of items) {
+    byStatus[item.status] += 1;
+    if (item.status === "done") {
+      doneDwellSeconds += item.dwellSeconds;
+    }
+  }
+
+  return {
+    total: items.length,
+    byStatus,
+    doneDwellSeconds,
   };
 }
 
@@ -69,6 +109,16 @@ export async function loadReadingList(
 ): Promise<ReadingListViewItem[]> {
   const rows = await options.repository.listByDomain(options.domain);
   return rows.map(toViewItem);
+}
+
+export async function loadReadingListOverview(
+  options: LoadReadingListOptions,
+): Promise<ReadingListOverview> {
+  const rows = await options.repository.listByDomain(options.domain);
+  return {
+    items: rows.map(toViewItem),
+    summary: summarizeReadingList(rows),
+  };
 }
 
 export async function addTutorResourceSuggestions(

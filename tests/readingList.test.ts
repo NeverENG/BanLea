@@ -3,6 +3,8 @@ import {
   addTutorResourceSuggestions,
   changeReadingListItemStatus,
   loadReadingList,
+  loadReadingListOverview,
+  summarizeReadingList,
 } from "@/features/reading-list";
 import type { ReadingListRepository } from "@/db/readingListRepo";
 import type { NewReadingListItem, ReadingListItem } from "@/types/readingList";
@@ -112,6 +114,84 @@ describe("reading-list feature", () => {
         addedAt: "2026-06-09T08:00:00.000Z",
       },
     ]);
+  });
+
+  it("汇总书单状态和已读停留时长", () => {
+    const summary = summarizeReadingList([
+      {
+        id: 1,
+        domain: "computer_science",
+        sourceId: null,
+        title: "A",
+        url: null,
+        kind: "doc",
+        status: "todo",
+        addedAt: "2026-06-09T08:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+      {
+        id: 2,
+        domain: "computer_science",
+        sourceId: null,
+        title: "B",
+        url: null,
+        kind: "article",
+        status: "done",
+        addedAt: "2026-06-09T08:01:00.000Z",
+        readAt: "2026-06-09T08:05:00.000Z",
+        dwellSeconds: 120,
+      },
+      {
+        id: 3,
+        domain: "computer_science",
+        sourceId: null,
+        title: "C",
+        url: null,
+        kind: "video",
+        status: "later",
+        addedAt: "2026-06-09T08:02:00.000Z",
+        readAt: null,
+        dwellSeconds: 90,
+      },
+    ]);
+
+    expect(summary).toEqual({
+      total: 3,
+      byStatus: {
+        todo: 1,
+        reading: 0,
+        done: 1,
+        later: 1,
+      },
+      doneDwellSeconds: 120,
+    });
+  });
+
+  it("一次读取书单列表和摘要", async () => {
+    const repo = repository([
+      {
+        id: 3,
+        domain: "computer_science",
+        sourceId: "manual",
+        title: "Kubernetes 文档",
+        url: "https://kubernetes.io/docs/",
+        kind: "doc",
+        status: "done",
+        addedAt: "2026-06-09T08:00:00.000Z",
+        readAt: "2026-06-09T08:30:00.000Z",
+        dwellSeconds: 180,
+      },
+    ]);
+
+    const overview = await loadReadingListOverview({
+      domain: "computer_science",
+      repository: repo,
+    });
+
+    expect(overview.items).toHaveLength(1);
+    expect(overview.summary.byStatus.done).toBe(1);
+    expect(overview.summary.doneDwellSeconds).toBe(180);
   });
 
   it("更新书单状态并写回 reading evidence", async () => {
