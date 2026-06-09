@@ -16,6 +16,23 @@ export interface RankedRecommendation extends Recommendation {
   rank: number;
 }
 
+export type RecommendationFeedbackKind = "click" | "skip";
+
+export interface RecommendationFeedbackInput {
+  kind: RecommendationFeedbackKind;
+  dwellSeconds?: number;
+}
+
+export interface UpdateRecommendationWeightsOptions {
+  recommendation: Recommendation;
+  feedback: RecommendationFeedbackInput;
+  weights?: RecommenderWeights;
+  learningRate?: number;
+  strongDwellSeconds?: number;
+  minWeight?: number;
+  maxWeight?: number;
+}
+
 export const DEFAULT_RECOMMENDER_WEIGHTS: Record<RecoFeatureKey, number> = {
   interest_match: 1.4,
   adjacency: 1,
@@ -35,6 +52,21 @@ function weightFor(weights: RecommenderWeights | undefined, key: RecoFeatureKey)
 
 function roundScore(score: number): number {
   return Math.round(score * 1_000_000) / 1_000_000;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function feedbackReward(
+  feedback: RecommendationFeedbackInput,
+  strongDwellSeconds: number,
+): number {
+  if (feedback.kind === "skip") {
+    return -1;
+  }
+  const dwell = Math.max(0, feedback.dwellSeconds ?? 0);
+  return 1 + Math.min(1, dwell / strongDwellSeconds);
 }
 
 export function scoreRecommendation(
@@ -68,4 +100,27 @@ export function rankRecommendations({
       ...candidate,
       rank: index + 1,
     }));
+}
+
+export function updateRecommendationWeights({
+  recommendation,
+  feedback,
+  weights,
+  learningRate = 0.08,
+  strongDwellSeconds = 90,
+  minWeight = 0,
+  maxWeight = 3,
+}: UpdateRecommendationWeightsOptions): Record<RecoFeatureKey, number> {
+  const reward = feedbackReward(feedback, strongDwellSeconds);
+  return RECO_FEATURE_KEYS.reduce(
+    (nextWeights, key) => {
+      const currentWeight = weightFor(weights, key);
+      const delta = learningRate * featureValue(recommendation, key) * reward;
+      return {
+        ...nextWeights,
+        [key]: roundScore(clamp(currentWeight + delta, minWeight, maxWeight)),
+      };
+    },
+    {} as Record<RecoFeatureKey, number>,
+  );
 }
