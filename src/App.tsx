@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { getEvidenceRepository, getPortraitRepository } from "@/db";
-import { createLearningEventService, type LearningEventResult } from "@/features/events";
+import {
+  createLearningEventService,
+  type LearningEventResult,
+  type LearningEventService,
+} from "@/features/events";
 import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
+import { createTutorInputService, type TutorMessage } from "@/features/tutor";
 import type { Evidence } from "@/types/evidence";
 import type {
   HarnessRunRepositories,
@@ -62,6 +67,8 @@ export default function App() {
   const [domain, setDomain] = useState("computer_science");
   const [kind, setKind] = useState<EventKind>("chat");
   const [content, setContent] = useState("帮我入门 k8s");
+  const [tutorInput, setTutorInput] = useState("帮我入门 k8s");
+  const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>([]);
   const [score, setScore] = useState(0.6);
   const [dwellSeconds, setDwellSeconds] = useState(60);
   const [lastEvidence, setLastEvidence] = useState<Evidence | null>(null);
@@ -76,6 +83,7 @@ export default function App() {
   const [apiKeyMessage, setApiKeyMessage] = useState("未设置");
   const [isKeyBusy, setIsKeyBusy] = useState(false);
   const [isClaudeReady, setIsClaudeReady] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -167,24 +175,52 @@ export default function App() {
     }
   }
 
+  async function createRuntimeLearningService(): Promise<LearningEventService> {
+    const [evidenceRepository, portraitRepository] = await Promise.all([
+      getEvidenceRepository(),
+      getPortraitRepository(),
+    ]);
+    const repositories = {
+      evidence: evidenceRepository,
+      portraits: portraitRepository,
+    };
+    return createLearningEventService({
+      repositories,
+      updateAfterEvidence: isClaudeReady
+        ? (evidence) => runLiveHarnessUpdate(evidence, repositories)
+        : undefined,
+    });
+  }
+
+  async function sendTutorMessage() {
+    setIsSending(true);
+    setStatus("发送中");
+    try {
+      const service = createTutorInputService({
+        learningEvents: await createRuntimeLearningService(),
+      });
+      const result = await service.sendUserMessage({
+        domain,
+        content: tutorInput,
+      });
+
+      setTutorMessages((messages) => [...messages, result.message]);
+      setTutorInput("");
+      setLastEvidence(result.learning.evidence);
+      setLastResult(result.learning);
+      setStatus("已发送");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "发送失败");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   async function recordEvent() {
     setIsSaving(true);
     setStatus("写入中");
     try {
-      const [evidenceRepository, portraitRepository] = await Promise.all([
-        getEvidenceRepository(),
-        getPortraitRepository(),
-      ]);
-      const repositories = {
-        evidence: evidenceRepository,
-        portraits: portraitRepository,
-      };
-      const service = createLearningEventService({
-        repositories,
-        updateAfterEvidence: isClaudeReady
-          ? (evidence) => runLiveHarnessUpdate(evidence, repositories)
-          : undefined,
-      });
+      const service = await createRuntimeLearningService();
       let result: LearningEventResult;
 
       switch (kind) {
@@ -267,11 +303,46 @@ export default function App() {
         <section className="flex flex-col rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
           <div className="border-b border-[var(--color-border)] px-5 py-4">
             <div className="text-sm text-[var(--color-muted)]">M2 自迭代闭环</div>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight">事件采集</h1>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight">提问式辅导</h1>
           </div>
 
-          <div className="flex-1 space-y-5 p-5">
-            <div className="grid grid-cols-6 gap-2">
+          <div className="flex-1 space-y-6 p-5">
+            <div className="flex min-h-60 flex-col gap-3 rounded-md border border-[var(--color-border)] bg-white p-4">
+              <div className="flex-1 space-y-3">
+                {tutorMessages.length === 0 ? (
+                  <div className="text-sm text-[var(--color-muted)]">尚无消息</div>
+                ) : (
+                  tutorMessages.map((message) => (
+                    <div
+                      className="ml-auto max-w-[78%] rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm leading-6 text-white"
+                      key={message.id}
+                    >
+                      {message.content}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <textarea
+                  className="min-h-16 flex-1 resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+                  onChange={(event) => setTutorInput(event.target.value)}
+                  value={tutorInput}
+                />
+                <button
+                  className="w-20 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  disabled={isSending}
+                  onClick={sendTutorMessage}
+                  type="button"
+                >
+                  {isSending ? "发送中" : "发送"}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-[var(--color-border)] pt-5">
+              <div className="text-sm font-medium">事件采集</div>
+              <div className="mt-3 grid grid-cols-6 gap-2">
               {EVENT_OPTIONS.map((option) => (
                 <button
                   className={`rounded-md border px-3 py-2 text-sm ${
@@ -286,6 +357,7 @@ export default function App() {
                   {option.label}
                 </button>
               ))}
+              </div>
             </div>
 
             <label className="block text-sm font-medium">
