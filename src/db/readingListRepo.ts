@@ -24,6 +24,14 @@ interface ReadingListRow {
 export interface ReadingListRepository {
   insert(input: NewReadingListItem): Promise<ReadingListItem>;
   listByDomain(domainId: string): Promise<ReadingListItem[]>;
+  updateStatus(
+    id: number,
+    input: {
+      status: ReadingListStatus;
+      readAt: string | null;
+      dwellSeconds: number;
+    },
+  ): Promise<ReadingListItem | null>;
 }
 
 function parseReadingListRow(row: ReadingListRow): ReadingListItem {
@@ -86,6 +94,25 @@ export function createReadingListRepository(
         [domainId],
       );
       return rows.map(parseReadingListRow);
+    },
+
+    async updateStatus(id, input) {
+      await db.execute(
+        `UPDATE reading_list
+            SET status = $2,
+                read_at = $3,
+                dwell_seconds = $4
+          WHERE id = $1`,
+        [id, input.status, input.readAt, input.dwellSeconds],
+      );
+      const rows = await db.select<ReadingListRow[]>(
+        `SELECT id, domain_id, source_id, title, url, kind, status, added_at, read_at, dwell_seconds
+           FROM reading_list
+          WHERE id = $1
+          LIMIT 1`,
+        [id],
+      );
+      return rows[0] ? parseReadingListRow(rows[0]) : null;
     },
   };
 }

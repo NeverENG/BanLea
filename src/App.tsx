@@ -25,6 +25,7 @@ import {
 } from "@/features/portrait";
 import {
   addTutorResourceSuggestions,
+  changeReadingListItemStatus,
   loadReadingList,
   type ReadingListViewItem,
 } from "@/features/reading-list";
@@ -39,6 +40,7 @@ import type {
   HarnessRunRepositories,
   TriggeredHarnessUpdateResult,
 } from "@/core/harness";
+import type { ReadingListStatus } from "@/types/readingList";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
 
@@ -79,6 +81,11 @@ const TRIGGER_REASON_LABELS: Record<string, string> = {
   strong_recommendation_feedback: "推荐强反馈",
   low_quiz_score: "低测验得分",
 };
+
+const READING_STATUS_ACTIONS: { status: ReadingListStatus; label: string }[] = [
+  { status: "done", label: "已读" },
+  { status: "later", label: "稍后" },
+];
 
 function triggerSummary(status: LearningLoopStatus | null): string {
   if (!status) {
@@ -138,6 +145,8 @@ export default function App() {
   const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
   const [evidenceTimeline, setEvidenceTimeline] = useState<EvidenceTimelineItem[]>([]);
   const [readingListItems, setReadingListItems] = useState<ReadingListViewItem[]>([]);
+  const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
+  const [readingListMessage, setReadingListMessage] = useState("未操作");
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -374,6 +383,39 @@ export default function App() {
       setStatus(error instanceof Error ? error.message : "发送失败");
     } finally {
       setIsSending(false);
+    }
+  }
+
+  async function changeReadingStatus(
+    item: ReadingListViewItem,
+    nextStatus: ReadingListStatus,
+  ) {
+    if (item.id === null) {
+      return;
+    }
+    setReadingListBusyId(item.id);
+    setReadingListMessage("更新中");
+    try {
+      const [repository, learningEvents] = await Promise.all([
+        getReadingListRepository(),
+        createRuntimeLearningService(),
+      ]);
+      const result = await changeReadingListItemStatus({
+        id: item.id,
+        status: nextStatus,
+        repository,
+        learningEvents,
+      });
+      if (result.learning) {
+        setLastEvidence(result.learning.evidence);
+        setLastResult(result.learning);
+      }
+      setReadingListMessage("已更新");
+      await refreshLoopStatus(domain);
+    } catch (error) {
+      setReadingListMessage(error instanceof Error ? error.message : "更新失败");
+    } finally {
+      setReadingListBusyId(null);
     }
   }
 
@@ -645,9 +687,27 @@ export default function App() {
                   <div>
                     {item.kind} · {item.status}
                   </div>
+                  <div className="mt-2 flex gap-2">
+                    {READING_STATUS_ACTIONS.map((action) => (
+                      <button
+                        className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-muted)] disabled:opacity-50"
+                        disabled={
+                          item.id === null ||
+                          readingListBusyId === item.id ||
+                          item.status === action.status
+                        }
+                        key={action.status}
+                        onClick={() => changeReadingStatus(item, action.status)}
+                        type="button"
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ))
             )}
+            <div>{readingListMessage}</div>
           </div>
 
           <div className="mt-5 text-sm font-medium">最近证据</div>

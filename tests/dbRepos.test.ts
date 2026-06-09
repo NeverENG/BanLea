@@ -242,4 +242,40 @@ describe("readingListRepository", () => {
     expect(db.selectCalls[0].query).toContain("ORDER BY added_at DESC");
     expect(db.selectCalls[0].bindValues).toEqual(["computer_science"]);
   });
+
+  it("updateStatus 更新状态并返回最新书单项", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }], [
+      [
+        {
+          id: 31,
+          domain_id: "computer_science",
+          source_id: "tutor:evidence-12:0:doc",
+          title: "k8s 入门资料",
+          url: null,
+          kind: "doc",
+          status: "done",
+          added_at: "2026-06-09T00:00:00.000Z",
+          read_at: "2026-06-09T00:10:00.000Z",
+          dwell_seconds: 120,
+        },
+      ],
+    ]);
+
+    const row = await createReadingListRepository(db).updateStatus(31, {
+      status: "done",
+      readAt: "2026-06-09T00:10:00.000Z",
+      dwellSeconds: 120,
+    });
+
+    expect(row?.status).toBe("done");
+    expect(row?.readAt).toBe("2026-06-09T00:10:00.000Z");
+    expect(db.executeCalls[0].query).toContain("UPDATE reading_list");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      31,
+      "done",
+      "2026-06-09T00:10:00.000Z",
+      120,
+    ]);
+    expect(db.selectCalls[0].bindValues).toEqual([31]);
+  });
 });

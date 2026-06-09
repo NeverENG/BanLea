@@ -1,6 +1,9 @@
 import type { ReadingListRepository } from "@/db/readingListRepo";
+import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { TutorResourceSuggestion } from "@/features/tutor";
 import type { ReadingListItem, ReadingListKind } from "@/types/readingList";
+import type { ReadingEvidenceEvent } from "@/core/evidence";
+import type { ReadingListStatus } from "@/types/readingList";
 
 export interface LoadReadingListOptions {
   domain: string;
@@ -13,6 +16,20 @@ export interface AddTutorResourceSuggestionsOptions {
   repository: ReadingListRepository;
   evidenceId?: number | null;
   now?: () => string;
+}
+
+export interface ChangeReadingListItemStatusOptions {
+  id: number;
+  status: ReadingListStatus;
+  repository: ReadingListRepository;
+  learningEvents?: Pick<LearningEventService, "recordReading">;
+  dwellSeconds?: number;
+  now?: () => string;
+}
+
+export interface ChangeReadingListItemStatusResult {
+  item: ReadingListViewItem;
+  learning: LearningEventResult | null;
 }
 
 export interface ReadingListViewItem {
@@ -82,4 +99,44 @@ export async function addTutorResourceSuggestions(
   );
 
   return inserted.map(toViewItem);
+}
+
+function readAtForStatus(status: ReadingListStatus, now: () => string): string | null {
+  return status === "done" ? now() : null;
+}
+
+function toReadingEvidenceEvent(
+  item: ReadingListItem,
+): ReadingEvidenceEvent {
+  return {
+    domain: item.domain,
+    title: item.title,
+    url: item.url ?? undefined,
+    status: item.status,
+    dwellSeconds: item.dwellSeconds,
+  };
+}
+
+export async function changeReadingListItemStatus(
+  options: ChangeReadingListItemStatusOptions,
+): Promise<ChangeReadingListItemStatusResult> {
+  const now = options.now ?? defaultNow;
+  const updated = await options.repository.updateStatus(options.id, {
+    status: options.status,
+    readAt: readAtForStatus(options.status, now),
+    dwellSeconds: options.dwellSeconds ?? 0,
+  });
+
+  if (!updated) {
+    throw new Error(`reading_list item ${options.id} not found`);
+  }
+
+  const learning = options.learningEvents
+    ? await options.learningEvents.recordReading(toReadingEvidenceEvent(updated))
+    : null;
+
+  return {
+    item: toViewItem(updated),
+    learning,
+  };
 }

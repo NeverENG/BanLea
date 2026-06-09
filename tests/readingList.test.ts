@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   addTutorResourceSuggestions,
+  changeReadingListItemStatus,
   loadReadingList,
 } from "@/features/reading-list";
 import type { ReadingListRepository } from "@/db/readingListRepo";
@@ -26,6 +27,19 @@ function repository(initial: ReadingListItem[] = []): ReadingListRepository {
     listByDomain: vi.fn(async (domainId: string) =>
       rows.filter((row) => row.domain === domainId),
     ),
+    updateStatus: vi.fn(async (id, input) => {
+      const index = rows.findIndex((row) => row.id === id);
+      if (index < 0) {
+        return null;
+      }
+      rows[index] = {
+        ...rows[index],
+        status: input.status,
+        readAt: input.readAt,
+        dwellSeconds: input.dwellSeconds,
+      };
+      return rows[index];
+    }),
   };
 }
 
@@ -98,5 +112,68 @@ describe("reading-list feature", () => {
         addedAt: "2026-06-09T08:00:00.000Z",
       },
     ]);
+  });
+
+  it("更新书单状态并写回 reading evidence", async () => {
+    const repo = repository([
+      {
+        id: 5,
+        domain: "computer_science",
+        sourceId: "tutor:evidence-12:0:doc",
+        title: "Service Mesh Guide",
+        url: "https://example.com/service-mesh",
+        kind: "article",
+        status: "todo",
+        addedAt: "2026-06-09T08:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+    ]);
+    const recordReading = vi.fn(async () => ({
+      evidence: {
+        id: 41,
+        domain: "computer_science",
+        type: "reading" as const,
+        summary: "阅读 Service Mesh Guide：done",
+        payload: {},
+        createdAt: "2026-06-09T08:10:00.000Z",
+        consumedInVersion: null,
+      },
+      update: {
+        status: "skipped" as const,
+        reason: "trigger_not_met" as const,
+        trigger: {
+          shouldRun: false as const,
+          reason: "evidence_count" as const,
+          evidenceCount: 1,
+        },
+        latest: null,
+        consumedEvidenceIds: [],
+      },
+    }));
+
+    const result = await changeReadingListItemStatus({
+      id: 5,
+      status: "done",
+      repository: repo,
+      learningEvents: { recordReading },
+      dwellSeconds: 90,
+      now: () => "2026-06-09T08:10:00.000Z",
+    });
+
+    expect(result.item.status).toBe("done");
+    expect(repo.updateStatus).toHaveBeenCalledWith(5, {
+      status: "done",
+      readAt: "2026-06-09T08:10:00.000Z",
+      dwellSeconds: 90,
+    });
+    expect(recordReading).toHaveBeenCalledWith({
+      domain: "computer_science",
+      title: "Service Mesh Guide",
+      url: "https://example.com/service-mesh",
+      status: "done",
+      dwellSeconds: 90,
+    });
+    expect(result.learning?.evidence.id).toBe(41);
   });
 });
