@@ -316,7 +316,11 @@ export default function App() {
         content: tutorInput,
       });
 
-      setTutorMessages((messages) => [...messages, result.message]);
+      setTutorMessages((messages) => [
+        ...messages,
+        result.userMessage,
+        result.assistantMessage,
+      ]);
       setTutorInput("");
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
@@ -429,7 +433,11 @@ export default function App() {
                 ) : (
                   tutorMessages.map((message) => (
                     <div
-                      className="ml-auto max-w-[78%] rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm leading-6 text-white"
+                      className={`max-w-[78%] rounded-md px-3 py-2 text-sm leading-6 ${
+                        message.role === "user"
+                          ? "ml-auto bg-[var(--color-accent)] text-white"
+                          : "mr-auto bg-[var(--color-soft)] text-[var(--color-ink)]"
+                      }`}
                       key={message.id}
                     >
                       {message.content}
