@@ -3,10 +3,12 @@ import type { ReadingListGroup, ReadingListSummary, ReadingListViewItem } from "
 
 export interface ReadingListWorkspaceViewProps {
   groups: ReadingListGroup[];
+  isLoading: boolean;
   items: ReadingListViewItem[];
   summary: ReadingListSummary;
   busyId: number | null;
   message: string;
+  onRefresh: () => void;
   onChangeStatus: (item: ReadingListViewItem, status: ReadingListStatus) => void;
 }
 
@@ -35,10 +37,12 @@ function itemKey(item: ReadingListViewItem): string {
 
 export function ReadingListWorkspaceView({
   groups,
+  isLoading,
   items,
   summary,
   busyId,
   message,
+  onRefresh,
   onChangeStatus,
 }: ReadingListWorkspaceViewProps) {
   return (
@@ -57,8 +61,16 @@ export function ReadingListWorkspaceView({
         ))}
       </div>
 
-      <div className="mt-3 rounded-md border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-muted)]">
-        已读停留 {summary.doneDwellSeconds}s · {message}
+      <div className="mt-3 flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-muted)]">
+        <div>已读停留 {summary.doneDwellSeconds}s · {isLoading ? "读取中" : message}</div>
+        <button
+          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-50"
+          disabled={isLoading}
+          onClick={onRefresh}
+          type="button"
+        >
+          刷新
+        </button>
       </div>
 
       {items.length === 0 ? (

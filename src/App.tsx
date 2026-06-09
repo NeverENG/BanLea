@@ -660,9 +660,11 @@ export default function App() {
             <ReadingListWorkspaceView
               busyId={readingListBusyId}
               groups={readingListGroups}
+              isLoading={isLoopStatusLoading}
               items={readingListItems}
               message={readingListMessage}
               onChangeStatus={changeReadingStatus}
+              onRefresh={() => refreshLoopStatus()}
               summary={readingListSummary}
             />
           ) : (
