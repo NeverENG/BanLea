@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { askStructured, type AskOptions } from "@/core/llm";
+import type { EvidenceRepository } from "@/db/evidenceRepo";
+import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
 import { DIMENSION_META } from "@/types/dimensions";
 import type { Evidence } from "@/types/evidence";
 import {
@@ -53,6 +55,35 @@ export interface MergePortraitPatchOptions {
   touchedDimensions: DimensionKey[];
   now?: () => string;
 }
+
+export interface HarnessRunRepositories {
+  portraits: PortraitRepository;
+  evidence: EvidenceRepository;
+}
+
+export interface RunHarnessUpdateInput {
+  scope: PortraitScope;
+  domain: string;
+  repositories: HarnessRunRepositories;
+  evidenceLimit?: number;
+  now?: () => string;
+  model?: HarnessModel;
+}
+
+export type HarnessUpdateResult =
+  | {
+      status: "skipped";
+      reason: "no_unconsumed_evidence";
+      latest: PortraitVersionRecord | null;
+      consumedEvidenceIds: [];
+    }
+  | {
+      status: "updated";
+      portrait: Portrait;
+      record: PortraitVersionRecord;
+      consumedEvidenceIds: number[];
+      consumedCount: number;
+    };
 
 const DEFAULT_NOW = () => new Date().toISOString();
 
@@ -284,4 +315,58 @@ export async function reevaluatePortrait(
     touchedDimensions,
     now: input.now,
   });
+}
+
+export async function runHarnessUpdate(
+  input: RunHarnessUpdateInput,
+): Promise<HarnessUpdateResult> {
+  assertDomainMatchesScope(input.scope, input.domain);
+
+  const { portraits, evidence } = input.repositories;
+  const latest = await portraits.getLatest(input.domain);
+  const pendingEvidence = await evidence.listUnconsumed(
+    input.domain,
+    input.evidenceLimit,
+  );
+
+  if (pendingEvidence.length === 0) {
+    return {
+      status: "skipped",
+      reason: "no_unconsumed_evidence",
+      latest,
+      consumedEvidenceIds: [],
+    };
+  }
+
+  const portrait = latest
+    ? await reevaluatePortrait({
+        previous: latest.portrait,
+        evidence: pendingEvidence,
+        now: input.now,
+        model: input.model,
+      })
+    : await generateInitialPortrait({
+        scope: input.scope,
+        domain: input.domain,
+        evidence: pendingEvidence,
+        now: input.now,
+        model: input.model,
+      });
+
+  const record = await portraits.save(portrait);
+  const consumedEvidenceIds = pendingEvidence.flatMap((item) =>
+    typeof item.id === "number" ? [item.id] : [],
+  );
+  const consumedCount = await evidence.markConsumed(
+    consumedEvidenceIds,
+    portrait.portraitVersion,
+  );
+
+  return {
+    status: "updated",
+    portrait,
+    record,
+    consumedEvidenceIds,
+    consumedCount,
+  };
 }
