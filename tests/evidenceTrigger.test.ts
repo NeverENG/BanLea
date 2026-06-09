@@ -109,6 +109,137 @@ describe("shouldTriggerHarnessUpdate", () => {
     expect(decision.reason).toBe("low_quiz_score");
   });
 
+  it("高自评与低测验得分冲突时触发矛盾信号", () => {
+    const decision = shouldTriggerHarnessUpdate({
+      latestPortrait: portrait(),
+      unconsumedEvidence: [
+        evidence({
+          id: 1,
+          type: "self_report",
+          summary: "用户自评：我已经掌握 k8s",
+          payload: {
+            statement: "我已经掌握 k8s",
+            confidenceScore: 0.92,
+          },
+        }),
+        evidence({
+          id: 2,
+          type: "quiz",
+          summary: "k8s 测验得分 0.4",
+          payload: { topic: "k8s", score: 0.4 },
+        }),
+      ],
+      policy: {
+        minEvidenceCount: 5,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+        highSelfReportScore: 0.8,
+        contradictionScoreGap: 0.3,
+      },
+    });
+
+    expect(decision.shouldRun).toBe(true);
+    expect(decision.reason).toBe("contradiction_signal");
+    if (decision.shouldRun) {
+      expect(decision.evidenceIds).toEqual([1, 2]);
+    }
+  });
+
+  it("自信聊天表达与低测验得分冲突时触发矛盾信号", () => {
+    const decision = shouldTriggerHarnessUpdate({
+      latestPortrait: portrait(),
+      unconsumedEvidence: [
+        evidence({
+          id: 1,
+          type: "chat",
+          summary: "user 对话：这个我已经懂了",
+          payload: {
+            role: "user",
+            content: "这个我已经懂了，应该没问题",
+          },
+        }),
+        evidence({
+          id: 2,
+          type: "quiz",
+          summary: "k8s 测验得分 0.4",
+          payload: { topic: "k8s", score: 0.4 },
+        }),
+      ],
+      policy: {
+        minEvidenceCount: 5,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+      },
+    });
+
+    expect(decision.shouldRun).toBe(true);
+    expect(decision.reason).toBe("contradiction_signal");
+  });
+
+  it("结构化自评与测验分数差距不足时不触发矛盾信号", () => {
+    const decision = shouldTriggerHarnessUpdate({
+      latestPortrait: portrait(),
+      unconsumedEvidence: [
+        evidence({
+          id: 1,
+          type: "self_report",
+          summary: "用户自评：我感觉还行",
+          payload: {
+            statement: "我感觉还行",
+            confidenceScore: 0.82,
+          },
+        }),
+        evidence({
+          id: 2,
+          type: "quiz",
+          summary: "k8s 测验得分 0.55",
+          payload: { topic: "k8s", score: 0.55 },
+        }),
+      ],
+      policy: {
+        minEvidenceCount: 5,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+        highSelfReportScore: 0.8,
+        contradictionScoreGap: 0.3,
+      },
+    });
+
+    expect(decision.shouldRun).toBe(true);
+    expect(decision.reason).toBe("low_quiz_score");
+  });
+
+  it("否定性的聊天表达不会误触发矛盾信号", () => {
+    const decision = shouldTriggerHarnessUpdate({
+      latestPortrait: portrait(),
+      unconsumedEvidence: [
+        evidence({
+          id: 1,
+          type: "chat",
+          summary: "user 对话：我还不懂 k8s",
+          payload: {
+            role: "user",
+            content: "我还不懂 k8s",
+          },
+        }),
+        evidence({
+          id: 2,
+          type: "quiz",
+          summary: "k8s 测验得分 0.4",
+          payload: { topic: "k8s", score: 0.4 },
+        }),
+      ],
+      policy: {
+        minEvidenceCount: 5,
+        strongFeedbackDwellSeconds: 45,
+        lowQuizScore: 0.6,
+      },
+    });
+
+    expect(decision.shouldRun).toBe(true);
+    expect(decision.reason).toBe("low_quiz_score");
+  });
+
   it("证据不足且无强信号时不触发", () => {
     const decision = shouldTriggerHarnessUpdate({
       latestPortrait: portrait(),

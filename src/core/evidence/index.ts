@@ -11,6 +11,7 @@ import type { Portrait } from "@/types/portrait";
 export type HarnessTriggerReason =
   | "no_evidence"
   | "first_portrait"
+  | "contradiction_signal"
   | "evidence_count"
   | "strong_recommendation_feedback"
   | "low_quiz_score";
@@ -58,6 +59,7 @@ export interface ChatEvidenceEvent extends BaseEvidenceEvent {
 export interface SelfReportEvidenceEvent extends BaseEvidenceEvent {
   statement: string;
   dimensionHints?: string[];
+  confidenceScore?: number;
 }
 
 export interface QuizEvidenceEvent extends BaseEvidenceEvent {
@@ -134,6 +136,115 @@ function hasLowQuizScore(evidence: Evidence[], policy: HarnessTriggerPolicy): bo
   });
 }
 
+function textPayloadValue(evidence: Evidence, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = evidence.payload[key];
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function hasConfidentClaimText(value: string): boolean {
+  const normalized = value.toLowerCase();
+  const negativeMarkers = [
+    "不懂",
+    "不会",
+    "没懂",
+    "没有掌握",
+    "没掌握",
+    "不熟",
+    "confused",
+    "don't understand",
+    "do not understand",
+    "not confident",
+  ];
+  if (negativeMarkers.some((marker) => normalized.includes(marker))) {
+    return false;
+  }
+
+  const positiveMarkers = [
+    "掌握",
+    "会了",
+    "懂了",
+    "理解了",
+    "很熟",
+    "没问题",
+    "有把握",
+    "confident",
+    "i understand",
+    "got it",
+  ];
+  return positiveMarkers.some((marker) => normalized.includes(marker));
+}
+
+function hasConfidentTextClaimSignal(evidence: Evidence[]): boolean {
+  return evidence.some((item) => {
+    if (item.type === "self_report") {
+      const statement = textPayloadValue(item, ["statement", "content"]);
+      return statement !== null && hasConfidentClaimText(statement);
+    }
+
+    if (item.type === "chat") {
+      const role = textPayloadValue(item, ["role"]);
+      if (role !== "user") {
+        return false;
+      }
+      const content = textPayloadValue(item, ["content"]);
+      return content !== null && hasConfidentClaimText(content);
+    }
+
+    return false;
+  });
+}
+
+function hasContradictionSignal(
+  evidence: Evidence[],
+  policy: HarnessTriggerPolicy,
+): boolean {
+  const contradictionScoreGap =
+    policy.contradictionScoreGap ??
+    DEFAULT_HARNESS_TRIGGER_POLICY.contradictionScoreGap ??
+    0.3;
+  const highSelfReportScore =
+    policy.highSelfReportScore ??
+    DEFAULT_HARNESS_TRIGGER_POLICY.highSelfReportScore ??
+    0.8;
+  const lowQuizScores = evidence
+    .filter((item) => item.type === "quiz")
+    .flatMap((item) => {
+      const score = numericPayloadValue(item, ["score", "correctRate", "correct_rate"]);
+      return score !== null && score <= policy.lowQuizScore ? [score] : [];
+    });
+
+  if (lowQuizScores.length === 0) {
+    return false;
+  }
+
+  const selfReportedScores = evidence
+    .filter((item) => item.type === "self_report")
+    .flatMap((item) => {
+      const score = numericPayloadValue(item, [
+        "confidenceScore",
+        "selfRatedScore",
+        "self_report_score",
+        "masteryScore",
+      ]);
+      return score !== null && score >= highSelfReportScore ? [score] : [];
+    });
+
+  if (
+    selfReportedScores.some((selfScore) =>
+      lowQuizScores.some((quizScore) => selfScore - quizScore >= contradictionScoreGap),
+    )
+  ) {
+    return true;
+  }
+
+  return hasConfidentTextClaimSignal(evidence);
+}
+
 function triggered(
   reason: Exclude<HarnessTriggerReason, "no_evidence">,
   evidence: Evidence[],
@@ -158,6 +269,10 @@ export function shouldTriggerHarnessUpdate(
 
   if (!input.latestPortrait) {
     return triggered("first_portrait", evidence);
+  }
+
+  if (hasContradictionSignal(evidence, policy)) {
+    return triggered("contradiction_signal", evidence);
   }
 
   if (evidence.length >= policy.minEvidenceCount) {
@@ -231,6 +346,7 @@ export function createEvidenceCollector(
           {
             statement: event.statement,
             dimensionHints: event.dimensionHints ?? [],
+            confidenceScore: event.confidenceScore,
           },
           now,
         ),

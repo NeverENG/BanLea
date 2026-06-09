@@ -52,6 +52,7 @@ function loopSummary(result: LearningEventResult | null): string {
 const TRIGGER_REASON_LABELS: Record<string, string> = {
   no_evidence: "无未消费证据",
   first_portrait: "首次建档",
+  contradiction_signal: "矛盾信号",
   evidence_count: "证据数量",
   strong_recommendation_feedback: "推荐强反馈",
   low_quiz_score: "低测验得分",
@@ -317,6 +318,7 @@ export default function App() {
           result = await service.recordSelfReport({
             domain: domain === "global" ? "global" : domain,
             statement: content,
+            confidenceScore: score,
           });
           break;
         case "quiz":

@@ -139,4 +139,36 @@ describe("loadLearningLoopStatus", () => {
       evidenceCount: 0,
     });
   });
+
+  it("有矛盾证据时显示 contradiction_signal", async () => {
+    const repos = repositories({
+      latest: record(portrait()),
+      pending: [
+        evidence({
+          id: 1,
+          type: "self_report",
+          payload: {
+            statement: "我已经掌握 k8s",
+            confidenceScore: 0.9,
+          },
+        }),
+        evidence({
+          id: 2,
+          type: "quiz",
+          payload: {
+            topic: "k8s",
+            score: 0.4,
+          },
+        }),
+      ],
+    });
+
+    const status = await loadLearningLoopStatus({
+      domain: "computer_science",
+      repositories: repos,
+    });
+
+    expect(status.trigger.shouldRun).toBe(true);
+    expect(status.trigger.reason).toBe("contradiction_signal");
+  });
 });
