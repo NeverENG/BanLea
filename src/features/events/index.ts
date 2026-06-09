@@ -1,5 +1,6 @@
 import {
   createEvidenceCollector,
+  shouldTriggerHarnessUpdate,
   type ChatEvidenceEvent,
   type QuizEvidenceEvent,
   type ReadingEvidenceEvent,
@@ -7,22 +8,19 @@ import {
   type RecommendationSkipEvidenceEvent,
   type SelfReportEvidenceEvent,
 } from "@/core/evidence";
-import {
-  runHarnessUpdateIfTriggered,
-  type HarnessModel,
-  type HarnessRunRepositories,
-  type TriggeredHarnessUpdateResult,
+import type {
+  HarnessRunRepositories,
+  TriggeredHarnessUpdateResult,
 } from "@/core/harness";
 import type { HarnessTriggerPolicy } from "@/config";
 import type { Evidence } from "@/types/evidence";
-import type { PortraitScope } from "@/types/portrait";
 
 export interface LearningEventServiceOptions {
   repositories: HarnessRunRepositories;
   evidenceLimit?: number;
   now?: () => string;
-  model?: HarnessModel;
   policy?: HarnessTriggerPolicy;
+  updateAfterEvidence?: (evidence: Evidence) => Promise<TriggeredHarnessUpdateResult>;
 }
 
 export interface LearningEventResult {
@@ -43,10 +41,6 @@ export interface LearningEventService {
   ): Promise<LearningEventResult>;
 }
 
-function scopeForDomain(domain: string): PortraitScope {
-  return domain === "global" ? "global" : "domain";
-}
-
 export function createLearningEventService(
   options: LearningEventServiceOptions,
 ): LearningEventService {
@@ -55,16 +49,40 @@ export function createLearningEventService(
     now: options.now,
   });
 
-  async function updateAfterEvidence(evidence: Evidence) {
-    return runHarnessUpdateIfTriggered({
-      scope: scopeForDomain(evidence.domain),
-      domain: evidence.domain,
-      repositories: options.repositories,
-      evidenceLimit: options.evidenceLimit,
-      now: options.now,
-      model: options.model,
+  async function updateAfterEvidence(
+    evidence: Evidence,
+  ): Promise<TriggeredHarnessUpdateResult> {
+    if (options.updateAfterEvidence) {
+      return options.updateAfterEvidence(evidence);
+    }
+
+    const [latest, unconsumedEvidence] = await Promise.all([
+      options.repositories.portraits.getLatest(evidence.domain),
+      options.repositories.evidence.listUnconsumed(evidence.domain, options.evidenceLimit),
+    ]);
+    const trigger = shouldTriggerHarnessUpdate({
+      latestPortrait: latest?.portrait ?? null,
+      unconsumedEvidence,
       policy: options.policy,
     });
+
+    if (!trigger.shouldRun) {
+      return {
+        status: "skipped",
+        reason: "trigger_not_met",
+        trigger,
+        latest,
+        consumedEvidenceIds: [],
+      };
+    }
+
+    return {
+      status: "deferred",
+      reason: "model_not_initialized",
+      trigger,
+      latest,
+      consumedEvidenceIds: [],
+    };
   }
 
   async function record<TEvent>(

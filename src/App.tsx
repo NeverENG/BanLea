@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { createEvidenceCollector } from "@/core/evidence";
-import { getEvidenceRepository } from "@/db";
+import { getEvidenceRepository, getPortraitRepository } from "@/db";
+import { createLearningEventService, type LearningEventResult } from "@/features/events";
 import type { Evidence } from "@/types/evidence";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
@@ -21,6 +21,19 @@ function eventSummary(evidence: Evidence | null): string {
   return `#${evidence.id ?? "-"} ${evidence.type} · ${evidence.summary}`;
 }
 
+function loopSummary(result: LearningEventResult | null): string {
+  if (!result) {
+    return "未运行";
+  }
+  if (result.update.status === "updated") {
+    return `已更新画像 v${result.update.portrait.portraitVersion}`;
+  }
+  if (result.update.status === "deferred") {
+    return "已记录证据，等待 API Key 初始化后更新画像";
+  }
+  return "已记录证据，触发条件未满足，继续积累";
+}
+
 export default function App() {
   const [domain, setDomain] = useState("computer_science");
   const [kind, setKind] = useState<EventKind>("chat");
@@ -28,6 +41,7 @@ export default function App() {
   const [score, setScore] = useState(0.6);
   const [dwellSeconds, setDwellSeconds] = useState(60);
   const [lastEvidence, setLastEvidence] = useState<Evidence | null>(null);
+  const [lastResult, setLastResult] = useState<LearningEventResult | null>(null);
   const [status, setStatus] = useState("等待记录");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -40,33 +54,41 @@ export default function App() {
     setIsSaving(true);
     setStatus("写入中");
     try {
-      const repository = await getEvidenceRepository();
-      const collector = createEvidenceCollector({ repository });
-      let evidence: Evidence;
+      const [evidenceRepository, portraitRepository] = await Promise.all([
+        getEvidenceRepository(),
+        getPortraitRepository(),
+      ]);
+      const service = createLearningEventService({
+        repositories: {
+          evidence: evidenceRepository,
+          portraits: portraitRepository,
+        },
+      });
+      let result: LearningEventResult;
 
       switch (kind) {
         case "chat":
-          evidence = await collector.recordChat({
+          result = await service.recordChat({
             domain,
             role: "user",
             content,
           });
           break;
         case "self_report":
-          evidence = await collector.recordSelfReport({
+          result = await service.recordSelfReport({
             domain: domain === "global" ? "global" : domain,
             statement: content,
           });
           break;
         case "quiz":
-          evidence = await collector.recordQuiz({
+          result = await service.recordQuiz({
             domain,
             topic: content,
             score,
           });
           break;
         case "reading":
-          evidence = await collector.recordReading({
+          result = await service.recordReading({
             domain,
             title: content,
             status: "done",
@@ -74,21 +96,22 @@ export default function App() {
           });
           break;
         case "reco_click":
-          evidence = await collector.recordRecommendationClick({
+          result = await service.recordRecommendationClick({
             domain,
             topic: content,
             dwellSeconds,
           });
           break;
         case "reco_skip":
-          evidence = await collector.recordRecommendationSkip({
+          result = await service.recordRecommendationSkip({
             domain,
             topic: content,
           });
           break;
       }
 
-      setLastEvidence(evidence);
+      setLastEvidence(result.evidence);
+      setLastResult(result);
       setStatus("已写入 evidence");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "写入失败");
@@ -205,7 +228,7 @@ export default function App() {
 
           <div className="mt-5 text-sm font-medium">闭环状态</div>
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
-            未运行
+            {loopSummary(lastResult)}
           </div>
         </aside>
       </main>

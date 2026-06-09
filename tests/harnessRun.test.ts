@@ -226,6 +226,23 @@ describe("runHarnessUpdateIfTriggered", () => {
     expect(repos.portraits.save).toHaveBeenCalledTimes(1);
     expect(repos.evidence.markConsumed).toHaveBeenCalledWith([8], 1);
   });
+
+  it("触发条件满足但模型不可用时延迟更新", async () => {
+    const repos = repositories({ latest: null, pending: [evidence({ id: 8 })] });
+
+    const result = await runHarnessUpdateIfTriggered({
+      scope: "domain",
+      domain: "computer_science",
+      repositories: repos,
+      canRunModel: () => false,
+    });
+
+    expect(result.status).toBe("deferred");
+    expect(result.reason).toBe("model_not_initialized");
+    expect(result.trigger.reason).toBe("first_portrait");
+    expect(repos.portraits.save).not.toHaveBeenCalled();
+    expect(repos.evidence.markConsumed).not.toHaveBeenCalled();
+  });
 });
 
 describe("recordEvidenceAndMaybeUpdate", () => {

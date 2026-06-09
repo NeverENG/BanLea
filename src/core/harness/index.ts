@@ -3,7 +3,7 @@ import {
   shouldTriggerHarnessUpdate,
   type HarnessTriggerDecision,
 } from "@/core/evidence";
-import { askStructured, type AskOptions } from "@/core/llm";
+import { askStructured, isInitialized, type AskOptions } from "@/core/llm";
 import type { EvidenceRepository } from "@/db/evidenceRepo";
 import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
 import type { HarnessTriggerPolicy } from "@/config";
@@ -77,6 +77,7 @@ export interface RunHarnessUpdateInput {
 
 export interface RunHarnessUpdateIfTriggeredInput extends RunHarnessUpdateInput {
   policy?: HarnessTriggerPolicy;
+  canRunModel?: () => boolean;
 }
 
 export interface RecordEvidenceAndMaybeUpdateInput
@@ -108,6 +109,13 @@ export type TriggeredHarnessUpdateResult =
       consumedEvidenceIds: [];
     }
   | {
+      status: "deferred";
+      reason: "model_not_initialized";
+      trigger: Extract<HarnessTriggerDecision, { shouldRun: true }>;
+      latest: PortraitVersionRecord | null;
+      consumedEvidenceIds: [];
+    }
+  | {
       status: "updated";
       trigger: Extract<HarnessTriggerDecision, { shouldRun: true }>;
       portrait: Portrait;
@@ -125,6 +133,13 @@ const DEFAULT_NOW = () => new Date().toISOString();
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
+}
+
+function canRunHarnessModel(input: RunHarnessUpdateIfTriggeredInput): boolean {
+  if (input.canRunModel) {
+    return input.canRunModel();
+  }
+  return Boolean(input.model) || isInitialized();
 }
 
 function dimensionSetForScope(scope: PortraitScope): Set<DimensionKey> {
@@ -443,6 +458,16 @@ export async function runHarnessUpdateIfTriggered(
     return {
       status: "skipped",
       reason: "trigger_not_met",
+      trigger,
+      latest,
+      consumedEvidenceIds: [],
+    };
+  }
+
+  if (!canRunHarnessModel(input)) {
+    return {
+      status: "deferred",
+      reason: "model_not_initialized",
       trigger,
       latest,
       consumedEvidenceIds: [],

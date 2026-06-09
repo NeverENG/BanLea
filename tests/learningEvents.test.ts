@@ -1,7 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { z } from "zod";
-import type { AskOptions } from "@/core/llm";
-import type { HarnessModel, PortraitPatch } from "@/core/harness";
 import { createLearningEventService } from "@/features/events";
 import type { EvidenceRepository } from "@/db/evidenceRepo";
 import type {
@@ -58,11 +55,6 @@ function evidence(overrides: Partial<Evidence> = {}): Evidence {
   };
 }
 
-function mockModel<T>(result: T): HarnessModel & { ask: ReturnType<typeof vi.fn> } {
-  const ask = vi.fn(async (_schema: z.ZodType<T>, _opts: AskOptions) => result);
-  return { askStructured: ask, ask };
-}
-
 function repositories(args: {
   latest: PortraitVersionRecord | null;
   pending: Evidence[];
@@ -93,14 +85,9 @@ describe("createLearningEventService", () => {
       latest: record(portrait()),
       pending: [evidence()],
     });
-    const model = mockModel<PortraitPatch>({
-      dimensions: {},
-      changeSummary: "不应调用",
-    });
     const service = createLearningEventService({
       repositories: repos,
       now,
-      model,
       policy: {
         minEvidenceCount: 3,
         strongFeedbackDwellSeconds: 45,
@@ -127,12 +114,22 @@ describe("createLearningEventService", () => {
       },
       createdAt: now(),
     });
-    expect(model.ask).not.toHaveBeenCalled();
     expect(repos.portraits.save).not.toHaveBeenCalled();
   });
 
-  it("推荐点击强反馈会触发画像重评估", async () => {
+  it("推荐点击强反馈可交给注入的更新入口完成画像重评估", async () => {
     const previous = portrait();
+    const updated = portrait({
+      portraitVersion: 3,
+      dimensions: {
+        interest: {
+          score: 0.85,
+          confidence: 0.75,
+          summary: "推荐点击长停留后兴趣上升",
+          evidenceIds: [22],
+        },
+      },
+    });
     const repos = repositories({
       latest: record(previous),
       pending: [
@@ -144,21 +141,23 @@ describe("createLearningEventService", () => {
         }),
       ],
     });
-    const model = mockModel<PortraitPatch>({
-      dimensions: {
-        interest: {
-          score: 0.85,
-          confidence: 0.75,
-          summary: "推荐点击长停留后兴趣上升",
-          evidenceIds: [22],
-        },
+    const updateAfterEvidence = vi.fn(async () => ({
+      status: "updated" as const,
+      trigger: {
+        shouldRun: true as const,
+        reason: "strong_recommendation_feedback" as const,
+        evidenceCount: 1,
+        evidenceIds: [22],
       },
-      changeSummary: "interest 因推荐强反馈上调",
-    });
+      portrait: updated,
+      record: record(updated),
+      consumedEvidenceIds: [22],
+      consumedCount: 1,
+    }));
     const service = createLearningEventService({
       repositories: repos,
       now,
-      model,
+      updateAfterEvidence,
     });
 
     const result = await service.recordRecommendationClick({
@@ -175,11 +174,39 @@ describe("createLearningEventService", () => {
       expect(result.update.consumedEvidenceIds).toEqual([22]);
     }
     expect(repos.evidence.insert).toHaveBeenCalledTimes(1);
-    expect(repos.portraits.save).toHaveBeenCalledTimes(1);
-    expect(repos.evidence.markConsumed).toHaveBeenCalledWith([22], 3);
+    expect(updateAfterEvidence).toHaveBeenCalledTimes(1);
   });
 
-  it("global 自评事件使用主画像 scope", async () => {
+  it("模型不可用时只记录证据并延迟画像更新", async () => {
+    const repos = repositories({
+      latest: null,
+      pending: [
+        evidence({
+          id: 22,
+          type: "reco_click",
+          summary: "点击推荐：k8s 入门",
+          payload: { topic: "k8s 入门", dwellSeconds: 90 },
+        }),
+      ],
+    });
+    const service = createLearningEventService({
+      repositories: repos,
+      now,
+    });
+
+    const result = await service.recordRecommendationClick({
+      domain: "computer_science",
+      topic: "k8s 入门",
+      dwellSeconds: 90,
+    });
+
+    expect(result.update.status).toBe("deferred");
+    expect(repos.evidence.insert).toHaveBeenCalledTimes(1);
+    expect(repos.portraits.save).not.toHaveBeenCalled();
+    expect(repos.evidence.markConsumed).not.toHaveBeenCalled();
+  });
+
+  it("global 自评事件在无更新入口时安全延迟", async () => {
     const globalPortrait = portrait({
       scope: "global",
       domain: "global",
@@ -203,20 +230,9 @@ describe("createLearningEventService", () => {
         }),
       ],
     });
-    const model = mockModel<PortraitPatch>({
-      dimensions: {
-        goal_orientation: {
-          confidence: 0.7,
-          summary: "明确偏项目与职业目标",
-          evidenceIds: [23],
-        },
-      },
-      changeSummary: "goal_orientation 因自评更新",
-    });
     const service = createLearningEventService({
       repositories: repos,
       now,
-      model,
       policy: {
         minEvidenceCount: 1,
         strongFeedbackDwellSeconds: 45,
@@ -229,11 +245,8 @@ describe("createLearningEventService", () => {
       statement: "我想通过项目学习",
     });
 
-    expect(result.update.status).toBe("updated");
-    if (result.update.status === "updated") {
-      expect(result.update.portrait.scope).toBe("global");
-      expect(result.update.portrait.domain).toBe("global");
-      expect(result.update.portrait.dimensions.goal_orientation.summary).toContain("项目");
-    }
+    expect(result.evidence.domain).toBe("global");
+    expect(result.update.status).toBe("deferred");
+    expect(repos.portraits.save).not.toHaveBeenCalled();
   });
 });
