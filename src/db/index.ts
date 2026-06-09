@@ -1,4 +1,10 @@
 import Database from "@tauri-apps/plugin-sql";
+import { createEvidenceRepository } from "./evidenceRepo";
+import { createPortraitRepository } from "./portraitRepo";
+
+export * from "./evidenceRepo";
+export * from "./portraitRepo";
+export * from "./types";
 
 /**
  * SQLite 仓储层入口（§11）。
@@ -19,4 +25,12 @@ export function getDb(): Promise<Database> {
     dbPromise = Database.load(DB_URL);
   }
   return dbPromise;
+}
+
+export async function getPortraitRepository() {
+  return createPortraitRepository(await getDb());
+}
+
+export async function getEvidenceRepository() {
+  return createEvidenceRepository(await getDb());
 }
