@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { getEvidenceRepository, getPortraitRepository } from "@/db";
 import {
   createLearningEventService,
+  loadLearningLoopStatus,
   type LearningEventResult,
   type LearningEventService,
+  type LearningLoopStatus,
 } from "@/features/events";
 import {
   createApiKeySettingsService,
@@ -47,6 +49,29 @@ function loopSummary(result: LearningEventResult | null): string {
   return "已记录证据，触发条件未满足，继续积累";
 }
 
+const TRIGGER_REASON_LABELS: Record<string, string> = {
+  no_evidence: "无未消费证据",
+  first_portrait: "首次建档",
+  evidence_count: "证据数量",
+  strong_recommendation_feedback: "推荐强反馈",
+  low_quiz_score: "低测验得分",
+};
+
+function triggerSummary(status: LearningLoopStatus | null): string {
+  if (!status) {
+    return "未读取";
+  }
+  const label = TRIGGER_REASON_LABELS[status.trigger.reason] ?? status.trigger.reason;
+  return status.trigger.shouldRun ? `会触发 · ${label}` : `未触发 · ${label}`;
+}
+
+function portraitSummary(status: LearningLoopStatus | null): string {
+  if (status?.portraitVersion == null) {
+    return "尚未建档";
+  }
+  return `v${status.portraitVersion} · 可信度 ${status.portraitConfidence?.toFixed(2) ?? "-"}`;
+}
+
 function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
 }
@@ -84,6 +109,9 @@ export default function App() {
   const [isKeyBusy, setIsKeyBusy] = useState(false);
   const [isClaudeReady, setIsClaudeReady] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [loopStatus, setLoopStatus] = useState<LearningLoopStatus | null>(null);
+  const [loopStatusMessage, setLoopStatusMessage] = useState("未读取");
+  const [isLoopStatusLoading, setIsLoopStatusLoading] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -121,6 +149,31 @@ export default function App() {
       cancelled = true;
     };
   }, [apiKeyService]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoopStatusLoading(true);
+    loadDomainLoopStatus(domain)
+      .then((next) => {
+        if (!cancelled) {
+          setLoopStatus(next);
+          setLoopStatusMessage("已读取");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoopStatusLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [domain]);
 
   async function saveKey() {
     setIsKeyBusy(true);
@@ -192,6 +245,34 @@ export default function App() {
     });
   }
 
+  async function loadDomainLoopStatus(targetDomain: string): Promise<LearningLoopStatus> {
+    const [evidenceRepository, portraitRepository] = await Promise.all([
+      getEvidenceRepository(),
+      getPortraitRepository(),
+    ]);
+    return loadLearningLoopStatus({
+      domain: targetDomain,
+      repositories: {
+        evidence: evidenceRepository,
+        portraits: portraitRepository,
+      },
+    });
+  }
+
+  async function refreshLoopStatus(targetDomain = domain) {
+    setIsLoopStatusLoading(true);
+    setLoopStatusMessage("读取中");
+    try {
+      const next = await loadDomainLoopStatus(targetDomain);
+      setLoopStatus(next);
+      setLoopStatusMessage("已刷新");
+    } catch (error) {
+      setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
+    } finally {
+      setIsLoopStatusLoading(false);
+    }
+  }
+
   async function sendTutorMessage() {
     setIsSending(true);
     setStatus("发送中");
@@ -209,6 +290,7 @@ export default function App() {
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
       setStatus("已发送");
+      await refreshLoopStatus(domain);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "发送失败");
     } finally {
@@ -270,6 +352,7 @@ export default function App() {
       setLastEvidence(result.evidence);
       setLastResult(result);
       setStatus("已写入 evidence");
+      await refreshLoopStatus(domain);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "写入失败");
     } finally {
@@ -343,20 +426,20 @@ export default function App() {
             <div className="border-t border-[var(--color-border)] pt-5">
               <div className="text-sm font-medium">事件采集</div>
               <div className="mt-3 grid grid-cols-6 gap-2">
-              {EVENT_OPTIONS.map((option) => (
-                <button
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    kind === option.kind
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                      : "border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-soft)]"
-                  }`}
-                  key={option.kind}
-                  onClick={() => setKind(option.kind)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
+                {EVENT_OPTIONS.map((option) => (
+                  <button
+                    className={`rounded-md border px-3 py-2 text-sm ${
+                      kind === option.kind
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                        : "border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-soft)]"
+                    }`}
+                    key={option.kind}
+                    onClick={() => setKind(option.kind)}
+                    type="button"
+                  >
+                    {option.label}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -464,6 +547,23 @@ export default function App() {
           <div className="mt-5 text-sm font-medium">闭环状态</div>
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
             {loopSummary(lastResult)}
+          </div>
+
+          <div className="mt-5 text-sm font-medium">画像状态</div>
+          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            <div>{portraitSummary(loopStatus)}</div>
+            <div>未消费证据：{loopStatus?.unconsumedEvidenceCount ?? "-"}</div>
+            <div>触发判断：{triggerSummary(loopStatus)}</div>
+            <div>状态：{isLoopStatusLoading ? "读取中" : loopStatusMessage}</div>
+            <div>变更：{loopStatus?.changeSummary ?? "无"}</div>
+            <button
+              className="mt-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
+              disabled={isLoopStatusLoading}
+              onClick={() => refreshLoopStatus()}
+              type="button"
+            >
+              刷新画像状态
+            </button>
           </div>
         </aside>
       </main>

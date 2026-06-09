@@ -2,6 +2,7 @@ import {
   createEvidenceCollector,
   shouldTriggerHarnessUpdate,
   type ChatEvidenceEvent,
+  type HarnessTriggerDecision,
   type QuizEvidenceEvent,
   type ReadingEvidenceEvent,
   type RecommendationClickEvidenceEvent,
@@ -12,6 +13,7 @@ import type {
   HarnessRunRepositories,
   TriggeredHarnessUpdateResult,
 } from "@/core/harness";
+import type { PortraitVersionRecord } from "@/db/portraitRepo";
 import type { HarnessTriggerPolicy } from "@/config";
 import type { Evidence } from "@/types/evidence";
 
@@ -39,6 +41,52 @@ export interface LearningEventService {
   recordRecommendationSkip(
     event: RecommendationSkipEvidenceEvent,
   ): Promise<LearningEventResult>;
+}
+
+export interface LearningLoopStatusOptions {
+  domain: string;
+  repositories: HarnessRunRepositories;
+  evidenceLimit?: number;
+  policy?: HarnessTriggerPolicy;
+}
+
+export interface LearningLoopStatus {
+  domain: string;
+  latest: PortraitVersionRecord | null;
+  portraitVersion: number | null;
+  portraitConfidence: number | null;
+  portraitUpdatedAt: string | null;
+  changeSummary: string | null;
+  unconsumedEvidenceCount: number;
+  trigger: HarnessTriggerDecision;
+}
+
+export async function loadLearningLoopStatus(
+  options: LearningLoopStatusOptions,
+): Promise<LearningLoopStatus> {
+  const [latest, unconsumedEvidence] = await Promise.all([
+    options.repositories.portraits.getLatest(options.domain),
+    options.repositories.evidence.listUnconsumed(
+      options.domain,
+      options.evidenceLimit,
+    ),
+  ]);
+  const trigger = shouldTriggerHarnessUpdate({
+    latestPortrait: latest?.portrait ?? null,
+    unconsumedEvidence,
+    policy: options.policy,
+  });
+
+  return {
+    domain: options.domain,
+    latest,
+    portraitVersion: latest?.version ?? null,
+    portraitConfidence: latest?.confidence ?? null,
+    portraitUpdatedAt: latest?.createdAt ?? null,
+    changeSummary: latest?.changeSummary ?? null,
+    unconsumedEvidenceCount: unconsumedEvidence.length,
+    trigger,
+  };
 }
 
 export function createLearningEventService(
