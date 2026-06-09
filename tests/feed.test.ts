@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { buildFeedRecommendationView } from "@/features/feed";
+import { describe, expect, it, vi } from "vitest";
+import {
+  buildFeedRecommendationView,
+  recordFeedRecommendationFeedback,
+  type FeedRecommendationItem,
+} from "@/features/feed";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
+import type { LearningEventResult } from "@/features/events";
+import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
 
 function snapshot(
   overrides: Partial<DomainLearningSnapshot> = {},
@@ -70,6 +76,57 @@ function snapshot(
       ...base.tutorHistory,
       ...overrides.tutorHistory,
     },
+  };
+}
+
+function feedItem(overrides: Partial<FeedRecommendationItem> = {}): FeedRecommendationItem {
+  return {
+    id: "learn-k8s",
+    kind: "learn",
+    topic: "k8s",
+    reason: "test",
+    score: 1.2,
+    features: {
+      interest_match: 1,
+      novelty: 0.5,
+    },
+    ...overrides,
+  };
+}
+
+function learningResult(): LearningEventResult {
+  return {
+    evidence: {
+      id: 1,
+      domain: "computer_science",
+      type: "reco_click",
+      summary: "click",
+      payload: {},
+      createdAt: "2026-06-09T08:00:00.000Z",
+      consumedInVersion: null,
+    },
+    update: {
+      status: "skipped",
+      reason: "trigger_not_met",
+      trigger: {
+        shouldRun: false,
+        reason: "evidence_count",
+        evidenceCount: 1,
+      },
+      latest: null,
+      consumedEvidenceIds: [],
+    },
+  };
+}
+
+function rankerWeightRepository(): RankerWeightRepository {
+  return {
+    list: vi.fn(async () => []),
+    getWeights: vi.fn(async () => ({
+      interest_match: 1.4,
+      novelty: 0.6,
+    })),
+    upsertMany: vi.fn(async () => undefined),
   };
 }
 
@@ -236,5 +293,68 @@ describe("buildFeedRecommendationView", () => {
     expect(view.items).toHaveLength(1);
     expect(view.items[0].topic).toBe("second");
     expect(view.sourceCounts.topicSeeds).toBe(1);
+  });
+});
+
+describe("recordFeedRecommendationFeedback", () => {
+  it("records click evidence and updates ranker weights", async () => {
+    const result = learningResult();
+    const learningEvents = {
+      recordRecommendationClick: vi.fn(async () => result),
+      recordRecommendationSkip: vi.fn(async () => result),
+    };
+    const rankerWeights = rankerWeightRepository();
+
+    const feedback = await recordFeedRecommendationFeedback({
+      domain: "computer_science",
+      item: feedItem(),
+      kind: "click",
+      dwellSeconds: 120,
+      learningEvents,
+      rankerWeights,
+      now: () => "2026-06-09T09:00:00.000Z",
+    });
+
+    expect(learningEvents.recordRecommendationClick).toHaveBeenCalledWith({
+      domain: "computer_science",
+      topic: "k8s",
+      dwellSeconds: 120,
+    });
+    expect(learningEvents.recordRecommendationSkip).not.toHaveBeenCalled();
+    expect(rankerWeights.upsertMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interest_match: expect.any(Number),
+        novelty: expect.any(Number),
+      }),
+      "2026-06-09T09:00:00.000Z",
+    );
+    expect(feedback.learning).toBe(result);
+    expect(feedback.updatedAt).toBe("2026-06-09T09:00:00.000Z");
+    expect(feedback.weights.interest_match).toBeGreaterThan(1.4);
+  });
+
+  it("records skip evidence and decreases active feature weights", async () => {
+    const result = learningResult();
+    const learningEvents = {
+      recordRecommendationClick: vi.fn(async () => result),
+      recordRecommendationSkip: vi.fn(async () => result),
+    };
+    const rankerWeights = rankerWeightRepository();
+
+    const feedback = await recordFeedRecommendationFeedback({
+      domain: "computer_science",
+      item: feedItem(),
+      kind: "skip",
+      learningEvents,
+      rankerWeights,
+      now: () => "2026-06-09T09:00:00.000Z",
+    });
+
+    expect(learningEvents.recordRecommendationSkip).toHaveBeenCalledWith({
+      domain: "computer_science",
+      topic: "k8s",
+    });
+    expect(learningEvents.recordRecommendationClick).not.toHaveBeenCalled();
+    expect(feedback.weights.interest_match).toBeLessThan(1.4);
   });
 });

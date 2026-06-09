@@ -1,9 +1,12 @@
 import {
   buildRecommendationCandidates,
+  updateRecommendationWeights,
   type RecommendationReadingSeed,
   type RecommendationTopicSeed,
 } from "@/core/recommender";
+import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
+import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { Recommendation } from "@/types/recommendation";
 
 export interface FeedRecommendationItem {
@@ -29,6 +32,29 @@ export interface BuildFeedRecommendationViewOptions {
   limit?: number;
   recentMessageLimit?: number;
 }
+
+export type FeedRecommendationFeedbackKind = "click" | "skip";
+
+export interface RecordFeedRecommendationFeedbackOptions {
+  domain: string;
+  item: FeedRecommendationItem;
+  kind: FeedRecommendationFeedbackKind;
+  learningEvents: Pick<
+    LearningEventService,
+    "recordRecommendationClick" | "recordRecommendationSkip"
+  >;
+  rankerWeights: RankerWeightRepository;
+  dwellSeconds?: number;
+  now?: () => string;
+}
+
+export interface FeedRecommendationFeedbackResult {
+  learning: LearningEventResult;
+  weights: Awaited<ReturnType<RankerWeightRepository["getWeights"]>>;
+  updatedAt: string;
+}
+
+const defaultNow = () => new Date().toISOString();
 
 function compactIdPart(value: string): string {
   return value
@@ -106,6 +132,20 @@ function toFeedItem(candidate: Recommendation, index: number): FeedRecommendatio
   };
 }
 
+function feedItemToRecommendation(item: FeedRecommendationItem): Recommendation {
+  return {
+    kind: item.kind,
+    topic: item.topic,
+    reason: item.reason,
+    features: item.features,
+    score: item.score,
+    shownAt: null,
+    clicked: false,
+    dwellSeconds: 0,
+    skipped: false,
+  };
+}
+
 export function buildFeedRecommendationView({
   snapshot,
   limit = 8,
@@ -135,5 +175,45 @@ export function buildFeedRecommendationView({
       items.length === 0
         ? "暂无画像、近期提问或未完成书单可用于生成推荐"
         : null,
+  };
+}
+
+export async function recordFeedRecommendationFeedback({
+  domain,
+  item,
+  kind,
+  learningEvents,
+  rankerWeights,
+  dwellSeconds,
+  now = defaultNow,
+}: RecordFeedRecommendationFeedbackOptions): Promise<FeedRecommendationFeedbackResult> {
+  const currentWeights = await rankerWeights.getWeights();
+  const weights = updateRecommendationWeights({
+    recommendation: feedItemToRecommendation(item),
+    feedback:
+      kind === "click"
+        ? { kind: "click", dwellSeconds }
+        : { kind: "skip" },
+    weights: currentWeights,
+  });
+  const updatedAt = now();
+  const learning =
+    kind === "click"
+      ? await learningEvents.recordRecommendationClick({
+          domain,
+          topic: item.topic,
+          dwellSeconds,
+        })
+      : await learningEvents.recordRecommendationSkip({
+          domain,
+          topic: item.topic,
+        });
+
+  await rankerWeights.upsertMany(weights, updatedAt);
+
+  return {
+    learning,
+    weights,
+    updatedAt,
   };
 }
