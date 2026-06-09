@@ -2,4 +2,5 @@
 export * from "./portrait";
 export * from "./dimensions";
 export * from "./evidence";
+export * from "./readingList";
 export * from "./recommendation";

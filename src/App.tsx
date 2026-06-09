@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { getEvidenceRepository, getPortraitRepository } from "@/db";
+import {
+  getEvidenceRepository,
+  getPortraitRepository,
+  getReadingListRepository,
+} from "@/db";
 import {
   loadEvidenceTimeline,
   type EvidenceTimelineItem,
@@ -20,6 +24,12 @@ import {
   type PortraitTimelineItem,
 } from "@/features/portrait";
 import {
+  addTutorResourceSuggestions,
+  loadReadingList,
+  type ReadingListViewItem,
+} from "@/features/reading-list";
+import {
+  createLocalTutorResourceSuggestions,
   createTutorInputService,
   loadTutorPromptContext,
   type TutorMessage,
@@ -127,6 +137,7 @@ export default function App() {
   const [isLoopStatusLoading, setIsLoopStatusLoading] = useState(false);
   const [portraitTimeline, setPortraitTimeline] = useState<PortraitTimelineItem[]>([]);
   const [evidenceTimeline, setEvidenceTimeline] = useState<EvidenceTimelineItem[]>([]);
+  const [readingListItems, setReadingListItems] = useState<ReadingListViewItem[]>([]);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
 
@@ -174,6 +185,7 @@ export default function App() {
           setLoopStatus(next.status);
           setPortraitTimeline(next.timeline);
           setEvidenceTimeline(next.evidence);
+          setReadingListItems(next.readingList);
           setLoopStatusMessage("已读取");
         }
       })
@@ -266,16 +278,18 @@ export default function App() {
     status: LearningLoopStatus;
     timeline: PortraitTimelineItem[];
     evidence: EvidenceTimelineItem[];
+    readingList: ReadingListViewItem[];
   }> {
-    const [evidenceRepository, portraitRepository] = await Promise.all([
+    const [evidenceRepository, portraitRepository, readingListRepository] = await Promise.all([
       getEvidenceRepository(),
       getPortraitRepository(),
+      getReadingListRepository(),
     ]);
     const repositories = {
       evidence: evidenceRepository,
       portraits: portraitRepository,
     };
-    const [status, timeline, evidence] = await Promise.all([
+    const [status, timeline, evidence, readingList] = await Promise.all([
       loadLearningLoopStatus({
         domain: targetDomain,
         repositories,
@@ -288,8 +302,12 @@ export default function App() {
         domain: targetDomain,
         repository: evidenceRepository,
       }),
+      loadReadingList({
+        domain: targetDomain,
+        repository: readingListRepository,
+      }),
     ]);
-    return { status, timeline, evidence };
+    return { status, timeline, evidence, readingList };
   }
 
   async function refreshLoopStatus(targetDomain = domain) {
@@ -300,6 +318,7 @@ export default function App() {
       setLoopStatus(next.status);
       setPortraitTimeline(next.timeline);
       setEvidenceTimeline(next.evidence);
+      setReadingListItems(next.readingList);
       setLoopStatusMessage("已刷新");
     } catch (error) {
       setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
@@ -312,9 +331,10 @@ export default function App() {
     setIsSending(true);
     setStatus("发送中");
     try {
-      const [learningEvents, portraitRepository] = await Promise.all([
+      const [learningEvents, portraitRepository, readingListRepository] = await Promise.all([
         createRuntimeLearningService(),
         getPortraitRepository(),
+        getReadingListRepository(),
       ]);
       const replyGenerator = isClaudeReady
         ? (await import("@/features/tutor/claudeReply")).createClaudeTutorReplyGenerator()
@@ -327,6 +347,7 @@ export default function App() {
             portraits: portraitRepository,
           }),
         replyGenerator,
+        resourceSuggestionProvider: createLocalTutorResourceSuggestions,
       });
       const result = await service.sendUserMessage({
         domain,
@@ -341,6 +362,12 @@ export default function App() {
       setTutorInput("");
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
+      await addTutorResourceSuggestions({
+        domain,
+        suggestions: result.resourceSuggestions,
+        repository: readingListRepository,
+        evidenceId: result.learning.evidence.id ?? null,
+      });
       setStatus("已发送");
       await refreshLoopStatus(domain);
     } catch (error) {
@@ -594,6 +621,33 @@ export default function App() {
           <div className="mt-5 text-sm font-medium">状态</div>
           <div className="mt-3 rounded-md bg-[var(--color-soft)] p-3 text-sm text-[var(--color-muted)]">
             {status}
+          </div>
+
+          <div className="mt-5 text-sm font-medium">待读书单</div>
+          <div className="mt-3 space-y-2 rounded-md border border-[var(--color-border)] p-3 text-sm leading-6 text-[var(--color-muted)]">
+            {readingListItems.length === 0 ? (
+              <div>暂无待读资料</div>
+            ) : (
+              readingListItems.slice(0, 5).map((item) => (
+                <div
+                  className="border-b border-[var(--color-border)] pb-2 last:border-b-0 last:pb-0"
+                  key={item.id ?? `${item.title}-${item.addedAt}`}
+                >
+                  <div className="font-medium text-[var(--color-ink)]">
+                    {item.url ? (
+                      <a href={item.url} rel="noreferrer" target="_blank">
+                        {item.title}
+                      </a>
+                    ) : (
+                      item.title
+                    )}
+                  </div>
+                  <div>
+                    {item.kind} · {item.status}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="mt-5 text-sm font-medium">最近证据</div>

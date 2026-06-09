@@ -1,5 +1,6 @@
 import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
+import type { ReadingListKind } from "@/types/readingList";
 import type { DimensionValue, PortraitScope } from "@/types/portrait";
 
 export interface TutorMessage {
@@ -20,6 +21,7 @@ export interface SendTutorMessageInput {
 export interface TutorTurnResult {
   userMessage: TutorMessage;
   assistantMessage: TutorMessage;
+  resourceSuggestions: TutorResourceSuggestion[];
   /** @deprecated use userMessage */
   message: TutorMessage;
   learning: LearningEventResult;
@@ -29,6 +31,7 @@ export interface TutorInputServiceOptions {
   learningEvents: Pick<LearningEventService, "recordChat">;
   promptContextProvider?: TutorPromptContextProvider;
   replyGenerator?: TutorReplyGenerator;
+  resourceSuggestionProvider?: TutorResourceSuggestionProvider;
   now?: () => string;
 }
 
@@ -92,6 +95,17 @@ export type TutorReplyGenerator = (
   input: TutorReplyInput,
 ) => Promise<string> | string;
 
+export interface TutorResourceSuggestion {
+  title: string;
+  kind: ReadingListKind;
+  url?: string | null;
+  reason?: string;
+}
+
+export type TutorResourceSuggestionProvider = (
+  input: TutorReplyInput,
+) => Promise<TutorResourceSuggestion[]> | TutorResourceSuggestion[];
+
 export interface TutorReplySections {
   plan: string;
   explanation: string;
@@ -149,6 +163,22 @@ export function createLocalTutorReply(input: TutorReplyInput): string {
     explanation: assistantReplyContent(input.learning),
     checkQuestion: `请先回答：关于“${input.content}”，你现在最不确定的是定义、工作流程，还是实际应用？`,
   });
+}
+
+function compactTitle(content: string): string {
+  return content.length > 32 ? `${content.slice(0, 32)}...` : content;
+}
+
+export function createLocalTutorResourceSuggestions(
+  input: TutorReplyInput,
+): TutorResourceSuggestion[] {
+  return [
+    {
+      title: `${compactTitle(input.content)}：入门资料`,
+      kind: "doc",
+      reason: "根据本轮提问自动加入待读书单，后续会替换为真实资源检索结果。",
+    },
+  ];
 }
 
 function dimensionToPromptItem(
@@ -267,13 +297,19 @@ export function createTutorInputService(
             learning,
           })
         : null;
-      const replyContent = await replyGenerator({
+      const replyInput: TutorReplyInput = {
         domain: input.domain,
         content,
         sessionId: input.sessionId,
         learning,
         promptContext,
-      });
+      };
+      const [replyContent, resourceSuggestions] = await Promise.all([
+        replyGenerator(replyInput),
+        options.resourceSuggestionProvider
+          ? options.resourceSuggestionProvider(replyInput)
+          : Promise.resolve([]),
+      ]);
       const assistantCreatedAt = now();
       const userMessage: TutorMessage = {
         id: messageId(learning.evidence.id, createdAt),
@@ -295,6 +331,7 @@ export function createTutorInputService(
       return {
         userMessage,
         assistantMessage,
+        resourceSuggestions,
         message: userMessage,
         learning,
       };

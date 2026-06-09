@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
+import { createReadingListRepository } from "@/db/readingListRepo";
 import type { QueryResult, SqlExecutor } from "@/db/types";
 import type { NewEvidence } from "@/types/evidence";
 import type { Portrait } from "@/types/portrait";
+import type { NewReadingListItem } from "@/types/readingList";
 
 interface SqlCall {
   query: string;
@@ -58,6 +60,21 @@ function newEvidence(overrides: Partial<NewEvidence> = {}): NewEvidence {
     summary: "复杂度小测 6/10",
     payload: { score: 0.6, topic: "complexity" },
     createdAt: "2026-06-09T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function newReadingListItem(
+  overrides: Partial<NewReadingListItem> = {},
+): NewReadingListItem {
+  return {
+    domain: "computer_science",
+    sourceId: "tutor:evidence-12:0:doc",
+    title: "k8s 入门资料",
+    url: null,
+    kind: "doc",
+    status: "todo",
+    addedAt: "2026-06-09T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -173,5 +190,56 @@ describe("evidenceRepository", () => {
     expect(db.executeCalls).toHaveLength(1);
     expect(db.executeCalls[0].query).toContain("WHERE id IN ($2, $3)");
     expect(db.executeCalls[0].bindValues).toEqual([4, 21, 22]);
+  });
+});
+
+describe("readingListRepository", () => {
+  it("insert 写入 reading_list 并返回带 id 的书单项", async () => {
+    const db = new MockDb([{ rowsAffected: 1, lastInsertId: 31 }]);
+    const repo = createReadingListRepository(db);
+    const input = newReadingListItem();
+
+    const inserted = await repo.insert(input);
+
+    expect(inserted.id).toBe(31);
+    expect(inserted.status).toBe("todo");
+    expect(db.executeCalls[0].query).toContain("INSERT INTO reading_list");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      "computer_science",
+      "tutor:evidence-12:0:doc",
+      "k8s 入门资料",
+      null,
+      "doc",
+      "todo",
+      "2026-06-09T00:00:00.000Z",
+      null,
+      0,
+    ]);
+  });
+
+  it("listByDomain 映射 snake_case 字段并按 added_at 倒序读取", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          id: 31,
+          domain_id: "computer_science",
+          source_id: "tutor:evidence-12:0:doc",
+          title: "k8s 入门资料",
+          url: null,
+          kind: "doc",
+          status: "todo",
+          added_at: "2026-06-09T00:00:00.000Z",
+          read_at: null,
+          dwell_seconds: 0,
+        },
+      ],
+    ]);
+
+    const rows = await createReadingListRepository(db).listByDomain("computer_science");
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].title).toBe("k8s 入门资料");
+    expect(db.selectCalls[0].query).toContain("ORDER BY added_at DESC");
+    expect(db.selectCalls[0].bindValues).toEqual(["computer_science"]);
   });
 });
