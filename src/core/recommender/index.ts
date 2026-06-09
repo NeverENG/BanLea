@@ -170,12 +170,14 @@ function mergeFeatures(left: RecoFeatures, right: RecoFeatures): RecoFeatures {
 }
 
 function recommendationCandidate(
+  domain: string,
   kind: RecommendationKind,
   topic: string,
   reason: string | undefined,
   features: RecoFeatures,
 ): Recommendation {
   return {
+    domain,
     kind,
     topic,
     reason,
@@ -222,6 +224,7 @@ export function rankRecommendations({
 }
 
 export function buildRecommendationCandidates({
+  domain,
   topics = [],
   readings = [],
   limit = DEFAULT_CANDIDATE_LIMIT,
@@ -252,6 +255,7 @@ export function buildRecommendationCandidates({
     }
     addCandidate(
       recommendationCandidate(
+        domain,
         "learn",
         topic,
         seed.reason,
@@ -270,6 +274,7 @@ export function buildRecommendationCandidates({
     }
     addCandidate(
       recommendationCandidate(
+        domain,
         "read",
         topic,
         seed.reason,

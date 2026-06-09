@@ -134,6 +134,7 @@ function toFeedItem(candidate: Recommendation, index: number): FeedRecommendatio
 
 function feedItemToRecommendation(item: FeedRecommendationItem): Recommendation {
   return {
+    domain: "global",
     kind: item.kind,
     topic: item.topic,
     reason: item.reason,

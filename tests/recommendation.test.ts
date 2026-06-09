@@ -25,6 +25,7 @@ describe("推荐 schema", () => {
     const r = parseRecommendation({ kind: "learn", topic: "k8s" });
     expect(r.success).toBe(true);
     if (r.success) {
+      expect(r.data.domain).toBe("global");
       expect(r.data.clicked).toBe(false);
       expect(r.data.skipped).toBe(false);
       expect(r.data.dwellSeconds).toBe(0);

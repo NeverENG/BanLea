@@ -33,6 +33,7 @@ export type RecoFeatures = z.infer<typeof recoFeaturesSchema>;
 /** 一条推荐候选（与 §11 recommendations 表对齐） */
 export const recommendationSchema = z.object({
   id: z.number().int().optional(),
+  domain: z.string().default("global"),
   kind: recommendationKindSchema,
   topic: z.string(),
   reason: z.string().optional(),

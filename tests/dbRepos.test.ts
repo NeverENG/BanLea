@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
 import { createRankerWeightRepository } from "@/db/rankerWeightRepo";
+import { createRecommendationRepository } from "@/db/recommendationRepo";
 import { createReadingListRepository } from "@/db/readingListRepo";
 import { createTutorSessionRepository } from "@/db/tutorSessionRepo";
 import type { QueryResult, SqlExecutor } from "@/db/types";
 import type { NewEvidence } from "@/types/evidence";
 import type { Portrait } from "@/types/portrait";
 import type { NewReadingListItem } from "@/types/readingList";
+import type { NewRecommendation } from "@/types/recommendation";
 
 interface SqlCall {
   query: string;
@@ -77,6 +79,23 @@ function newReadingListItem(
     kind: "doc",
     status: "todo",
     addedAt: "2026-06-09T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function newRecommendation(
+  overrides: Partial<NewRecommendation> = {},
+): NewRecommendation {
+  return {
+    domain: "computer_science",
+    kind: "learn",
+    topic: "k8s networking",
+    reason: "next focus",
+    features: {
+      interest_match: 0.8,
+      novelty: 0.4,
+    },
+    score: 1.6,
     ...overrides,
   };
 }
@@ -353,6 +372,99 @@ describe("rankerWeightRepository", () => {
       ["interest_match", 1.5, "2026-06-09T10:00:00.000Z"],
       ["novelty", 0.8, "2026-06-09T10:00:00.000Z"],
     ]);
+  });
+});
+
+describe("recommendationRepository", () => {
+  it("insert 写入 recommendations 并返回带 id 的候选", async () => {
+    const db = new MockDb([{ rowsAffected: 1, lastInsertId: 51 }]);
+    const repo = createRecommendationRepository(db);
+    const input = newRecommendation();
+
+    const inserted = await repo.insert(input);
+
+    expect(inserted.id).toBe(51);
+    expect(inserted.domain).toBe("computer_science");
+    expect(inserted.clicked).toBe(false);
+    expect(db.executeCalls[0].query).toContain("INSERT INTO recommendations");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      "computer_science",
+      "learn",
+      "k8s networking",
+      "next focus",
+      JSON.stringify({
+        interest_match: 0.8,
+        novelty: 0.4,
+      }),
+      1.6,
+    ]);
+  });
+
+  it("listByDomain 解析 features_json 和反馈字段", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          id: 51,
+          domain_id: "computer_science",
+          kind: "read",
+          topic: "K8s intro",
+          reason: "reading list",
+          features_json: JSON.stringify({ novelty: 0.6 }),
+          score: 1.1,
+          shown_at: "2026-06-09T10:00:00.000Z",
+          clicked: 1,
+          dwell_seconds: 120,
+          skipped: 0,
+        },
+      ],
+    ]);
+
+    const rows = await createRecommendationRepository(db).listByDomain(
+      "computer_science",
+      5,
+    );
+
+    expect(rows).toEqual([
+      {
+        id: 51,
+        domain: "computer_science",
+        kind: "read",
+        topic: "K8s intro",
+        reason: "reading list",
+        features: { novelty: 0.6 },
+        score: 1.1,
+        shownAt: "2026-06-09T10:00:00.000Z",
+        clicked: true,
+        dwellSeconds: 120,
+        skipped: false,
+      },
+    ]);
+    expect(db.selectCalls[0].query).toContain("WHERE domain_id = $1");
+    expect(db.selectCalls[0].query).toContain("LIMIT $2");
+    expect(db.selectCalls[0].bindValues).toEqual(["computer_science", 5]);
+  });
+
+  it("markShown/markClicked/markSkipped 更新反馈字段", async () => {
+    const db = new MockDb([
+      { rowsAffected: 1 },
+      { rowsAffected: 1 },
+      { rowsAffected: 1 },
+    ]);
+    const repo = createRecommendationRepository(db);
+
+    await repo.markShown(51, "2026-06-09T10:00:00.000Z");
+    await repo.markClicked(51, 90);
+    await repo.markSkipped(51);
+
+    expect(db.executeCalls[0].query).toContain("SET shown_at = $2");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      51,
+      "2026-06-09T10:00:00.000Z",
+    ]);
+    expect(db.executeCalls[1].query).toContain("clicked = 1");
+    expect(db.executeCalls[1].bindValues).toEqual([51, 90]);
+    expect(db.executeCalls[2].query).toContain("skipped = 1");
+    expect(db.executeCalls[2].bindValues).toEqual([51]);
   });
 });
 

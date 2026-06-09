@@ -2,12 +2,14 @@ import Database from "@tauri-apps/plugin-sql";
 import { createEvidenceRepository } from "./evidenceRepo";
 import { createPortraitRepository } from "./portraitRepo";
 import { createRankerWeightRepository } from "./rankerWeightRepo";
+import { createRecommendationRepository } from "./recommendationRepo";
 import { createReadingListRepository } from "./readingListRepo";
 import { createTutorSessionRepository } from "./tutorSessionRepo";
 
 export * from "./evidenceRepo";
 export * from "./portraitRepo";
 export * from "./rankerWeightRepo";
+export * from "./recommendationRepo";
 export * from "./readingListRepo";
 export * from "./tutorSessionRepo";
 export * from "./types";
@@ -51,4 +53,8 @@ export async function getTutorSessionRepository() {
 
 export async function getRankerWeightRepository() {
   return createRankerWeightRepository(await getDb());
+}
+
+export async function getRecommendationRepository() {
+  return createRecommendationRepository(await getDb());
 }
