@@ -253,46 +253,58 @@ export default function App() {
   }, [domain]);
 
   useEffect(() => {
-    if (!domainSnapshot) {
+    const snapshot = domainSnapshot;
+    if (!snapshot) {
       setFeedRecommendationView(null);
       return;
     }
+    const snapshotForFeed: DomainLearningSnapshot = snapshot;
 
     let cancelled = false;
-    const view = buildFeedRecommendationView({
-      snapshot: domainSnapshot,
-    });
-    setFeedRecommendationView(view);
+    setFeedMessage("生成推荐中");
 
-    if (view.items.length === 0) {
-      setFeedMessage(view.emptyReason ?? "暂无可同步推荐");
-      return () => {
-        cancelled = true;
-      };
+    async function syncFeedRecommendations() {
+      const [rankerWeights, recommendationRepository] = await Promise.all([
+        getRankerWeightRepository(),
+        getRecommendationRepository(),
+      ]);
+      const weights = await rankerWeights.getWeights();
+      const view = buildFeedRecommendationView({
+        snapshot: snapshotForFeed,
+        weights,
+      });
+
+      if (cancelled) {
+        return;
+      }
+
+      setFeedRecommendationView(view);
+
+      if (view.items.length === 0) {
+        setFeedMessage(view.emptyReason ?? "暂无可同步推荐");
+        return;
+      }
+
+      setFeedMessage("同步推荐候选中");
+      const persisted = await persistFeedRecommendationView({
+        domain: snapshotForFeed.status.domain,
+        view,
+        repository: recommendationRepository,
+      });
+
+      if (!cancelled) {
+        setFeedRecommendationView(persisted);
+        setFeedMessage("推荐候选已同步");
+      }
     }
 
-    setFeedMessage("同步推荐候选中");
-    getRecommendationRepository()
-      .then((repository) =>
-        persistFeedRecommendationView({
-          domain: domainSnapshot.status.domain,
-          view,
-          repository,
-        }),
-      )
-      .then((persisted) => {
-        if (!cancelled) {
-          setFeedRecommendationView(persisted);
-          setFeedMessage("推荐候选已同步");
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setFeedMessage(
-            error instanceof Error ? error.message : "推荐候选同步失败",
-          );
-        }
-      });
+    syncFeedRecommendations().catch((error: unknown) => {
+      if (!cancelled) {
+        setFeedMessage(
+          error instanceof Error ? error.message : "推荐候选同步失败",
+        );
+      }
+    });
 
     return () => {
       cancelled = true;

@@ -1,6 +1,7 @@
 import {
   buildRecommendationCandidates,
   updateRecommendationWeights,
+  type RecommenderWeights,
   type RecommendationReadingSeed,
   type RecommendationTopicSeed,
 } from "@/core/recommender";
@@ -33,6 +34,7 @@ export interface BuildFeedRecommendationViewOptions {
   snapshot: DomainLearningSnapshot;
   limit?: number;
   recentMessageLimit?: number;
+  weights?: RecommenderWeights;
 }
 
 export interface PersistFeedRecommendationViewOptions {
@@ -161,6 +163,7 @@ export function buildFeedRecommendationView({
   snapshot,
   limit = 8,
   recentMessageLimit = 3,
+  weights,
 }: BuildFeedRecommendationViewOptions): FeedRecommendationViewModel {
   const topicSeeds = [
     ...portraitTopicSeeds(snapshot),
@@ -172,6 +175,7 @@ export function buildFeedRecommendationView({
     topics: topicSeeds,
     readings,
     limit,
+    weights,
     noveltyBoost: 0.2,
   });
   const items = candidates.map(toFeedItem);

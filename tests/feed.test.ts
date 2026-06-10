@@ -314,6 +314,59 @@ describe("buildFeedRecommendationView", () => {
     expect(view.items[0].topic).toBe("second");
     expect(view.sourceCounts.topicSeeds).toBe(1);
   });
+
+  it("uses learned weights when ranking feed items", () => {
+    const view = buildFeedRecommendationView({
+      snapshot: snapshot({
+        readingList: {
+          items: [
+            {
+              id: 12,
+              title: "Explore later",
+              kind: "doc",
+              status: "later",
+              url: null,
+              addedAt: "2026-06-09T08:10:00.000Z",
+            },
+          ],
+          groups: [],
+          summary: {
+            total: 1,
+            byStatus: {
+              todo: 0,
+              reading: 0,
+              done: 0,
+              later: 1,
+            },
+            doneDwellSeconds: 0,
+          },
+        },
+        tutorHistory: {
+          session: null,
+          messages: [
+            {
+              id: "u1",
+              role: "user",
+              content: "Mentioned topic",
+              domain: "computer_science",
+              createdAt: "2026-06-09T08:05:00.000Z",
+              evidenceId: null,
+            },
+          ],
+        },
+      }),
+      weights: {
+        interest_match: 0,
+        adjacency: 0,
+        mentioned: 0,
+        difficulty_fit: 0,
+        novelty: 5,
+      },
+    });
+
+    expect(view.items[0].topic).toBe("Explore later");
+    expect(view.items[0].score).toBeGreaterThan(view.items[1].score);
+  });
 });
 
 describe("recordFeedRecommendationFeedback", () => {
