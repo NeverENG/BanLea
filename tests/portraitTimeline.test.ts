@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
+  buildPortraitRevisionEvidenceDraft,
   loadPortraitTimeline,
+  recordPortraitRevisionRequest,
 } from "@/features/portrait";
 import type {
   PortraitRepository,
@@ -206,5 +208,72 @@ describe("buildPortraitDimensionTrendItems", () => {
     expect(trends[0].points.map((point) => point.version)).toEqual([1, 2]);
     expect(trends[0].latestValue).toBe(0.8);
     expect(trends[0].delta).toBeCloseTo(0.3);
+  });
+});
+
+describe("portrait revision requests", () => {
+  it("builds a self-report evidence draft for a dimension revision", () => {
+    const draft = buildPortraitRevisionEvidenceDraft({
+      domain: "computer_science",
+      dimension: "interest",
+      request: "我对 k8s 的兴趣比画像里更强",
+      currentSummary: "兴趣中等",
+      confidenceScore: 1.2,
+    });
+
+    expect(draft).toEqual({
+      domain: "computer_science",
+      statement:
+        "希望调整画像维度「兴趣强度」：我对 k8s 的兴趣比画像里更强\n当前摘要：兴趣中等",
+      dimensionHints: ["interest"],
+      confidenceScore: 1,
+      summary: "画像协商：兴趣强度",
+    });
+  });
+
+  it("records portrait revision requests through self-report evidence", async () => {
+    const result = {
+      evidence: {
+        id: 1,
+        domain: "computer_science",
+        type: "self_report" as const,
+        summary: "画像协商：掌握程度",
+        payload: {},
+        createdAt: "2026-06-10T09:00:00.000Z",
+        consumedInVersion: null,
+      },
+      update: {
+        status: "skipped" as const,
+        reason: "trigger_not_met" as const,
+        trigger: {
+          shouldRun: false as const,
+          reason: "evidence_count" as const,
+          evidenceCount: 1,
+        },
+        latest: null,
+        consumedEvidenceIds: [],
+      },
+    };
+    const learningEvents = {
+      recordSelfReport: vi.fn(async () => result),
+    };
+
+    const saved = await recordPortraitRevisionRequest({
+      input: {
+        domain: "computer_science",
+        dimension: "mastery",
+        request: "我已经掌握基础概念",
+      },
+      learningEvents,
+    });
+
+    expect(saved).toBe(result);
+    expect(learningEvents.recordSelfReport).toHaveBeenCalledWith({
+      domain: "computer_science",
+      statement: "希望调整画像维度「掌握程度」：我已经掌握基础概念",
+      dimensionHints: ["mastery"],
+      confidenceScore: 0.8,
+      summary: "画像协商：掌握程度",
+    });
   });
 });

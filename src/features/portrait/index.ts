@@ -2,6 +2,7 @@ import type {
   PortraitRepository,
   PortraitVersionRecord,
 } from "@/db/portraitRepo";
+import type { LearningEventResult, LearningEventService } from "@/features/events";
 import {
   DIMENSION_META,
   type DimensionGroup,
@@ -67,12 +68,37 @@ export interface BuildPortraitDimensionTrendItemsOptions {
   limit?: number;
 }
 
+export interface PortraitRevisionRequestInput {
+  domain: string;
+  dimension: DimensionKey;
+  request: string;
+  currentSummary?: string | null;
+  confidenceScore?: number;
+}
+
+export interface PortraitRevisionEvidenceDraft {
+  domain: string;
+  statement: string;
+  dimensionHints: string[];
+  confidenceScore: number;
+  summary: string;
+}
+
+export interface RecordPortraitRevisionRequestOptions {
+  input: PortraitRevisionRequestInput;
+  learningEvents: Pick<LearningEventService, "recordSelfReport">;
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
 function isDimensionKey(value: string): value is DimensionKey {
   return value in DIMENSION_META;
+}
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 export function buildPortraitDimensionVisualItems(
@@ -173,6 +199,39 @@ export function buildPortraitDimensionTrendItems(
       ];
     })
     .slice(0, limit);
+}
+
+export function buildPortraitRevisionEvidenceDraft(
+  input: PortraitRevisionRequestInput,
+): PortraitRevisionEvidenceDraft {
+  const request = normalizeText(input.request);
+  if (!request) {
+    throw new Error("portrait revision request cannot be empty");
+  }
+
+  const meta = DIMENSION_META[input.dimension];
+  const currentSummary = input.currentSummary
+    ? normalizeText(input.currentSummary)
+    : "";
+  const statement = currentSummary
+    ? `希望调整画像维度「${meta.label}」：${request}\n当前摘要：${currentSummary}`
+    : `希望调整画像维度「${meta.label}」：${request}`;
+
+  return {
+    domain: input.domain,
+    statement,
+    dimensionHints: [input.dimension],
+    confidenceScore: clamp01(input.confidenceScore ?? 0.8),
+    summary: `画像协商：${meta.label}`,
+  };
+}
+
+export async function recordPortraitRevisionRequest({
+  input,
+  learningEvents,
+}: RecordPortraitRevisionRequestOptions): Promise<LearningEventResult> {
+  const draft = buildPortraitRevisionEvidenceDraft(input);
+  return learningEvents.recordSelfReport(draft);
 }
 
 function toTimelineItem(record: PortraitVersionRecord): PortraitTimelineItem {
