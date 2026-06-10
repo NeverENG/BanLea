@@ -1,5 +1,8 @@
 import type { LearningLoopStatus } from "@/features/events";
-import type { PortraitTimelineItem } from "./index";
+import {
+  buildPortraitDimensionVisualItems,
+  type PortraitTimelineItem,
+} from "./index";
 
 export interface PortraitStatusPanelProps {
   status: LearningLoopStatus | null;
@@ -42,6 +45,11 @@ export function PortraitStatusPanel({
   message,
   onRefresh,
 }: PortraitStatusPanelProps) {
+  const dimensions = buildPortraitDimensionVisualItems(
+    status?.latest?.portrait ?? null,
+    { limit: 6 },
+  );
+
   return (
     <>
       <div className="mt-5 text-sm font-medium">画像状态</div>
@@ -59,6 +67,38 @@ export function PortraitStatusPanel({
         >
           刷新画像状态
         </button>
+      </div>
+
+      <div className="mt-5 text-sm font-medium">维度概览</div>
+      <div className="mt-3 space-y-3 rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-muted)]">
+        {dimensions.length === 0 ? (
+          <div>暂无维度</div>
+        ) : (
+          dimensions.map((item) => (
+            <div
+              className={item.isLowConfidence ? "opacity-60" : undefined}
+              key={item.key}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 truncate font-medium text-[var(--color-ink)]">
+                  {item.label}
+                </div>
+                <div className="shrink-0 text-xs">
+                  {item.value.toFixed(2)} · {item.confidence.toFixed(2)}
+                </div>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--color-soft)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-accent)]"
+                  style={{ width: `${Math.round(item.value * 100)}%` }}
+                />
+              </div>
+              <div className="mt-1 line-clamp-2 text-xs leading-5">
+                {item.summary}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       <div className="mt-5 text-sm font-medium">版本演化</div>

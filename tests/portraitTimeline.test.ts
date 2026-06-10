@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadPortraitTimeline } from "@/features/portrait";
+import {
+  buildPortraitDimensionVisualItems,
+  loadPortraitTimeline,
+} from "@/features/portrait";
 import type {
   PortraitRepository,
   PortraitVersionRecord,
@@ -91,5 +94,49 @@ describe("loadPortraitTimeline", () => {
       },
     ]);
     expect(repo.listByDomain).toHaveBeenCalledWith("computer_science");
+  });
+});
+
+describe("buildPortraitDimensionVisualItems", () => {
+  it("maps latest portrait dimensions to visual items", () => {
+    const items = buildPortraitDimensionVisualItems(
+      portrait({
+        dimensions: {
+          interest: {
+            score: 0.7,
+            confidence: 0.65,
+            summary: "对云原生兴趣较高",
+            evidenceIds: [1, 2],
+          },
+          mastery: {
+            score: 0.5,
+            confidence: 0.35,
+            summary: "基础仍不稳",
+            evidenceIds: [],
+          },
+          unknown_dimension: {
+            score: 1,
+            confidence: 1,
+            summary: "ignore",
+            evidenceIds: [],
+          },
+        },
+      }),
+      { lowConfidenceThreshold: 0.4 },
+    );
+
+    expect(items.map((item) => item.key)).toEqual(["interest", "mastery"]);
+    expect(items[0]).toMatchObject({
+      label: "兴趣强度",
+      score: 0.7,
+      confidence: 0.65,
+      value: 0.7,
+      evidenceCount: 2,
+      isLowConfidence: false,
+    });
+    expect(items[1]).toMatchObject({
+      label: "掌握程度",
+      isLowConfidence: true,
+    });
   });
 });
