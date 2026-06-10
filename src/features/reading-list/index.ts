@@ -1,9 +1,14 @@
 import type { ReadingListRepository } from "@/db/readingListRepo";
+import type { ResourceItem, ResourceItemKind } from "@/core/sources";
 import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { TutorResourceSuggestion } from "@/features/tutor";
-import type { ReadingListItem, ReadingListKind } from "@/types/readingList";
+import type {
+  NewReadingListItem,
+  ReadingListItem,
+  ReadingListKind,
+  ReadingListStatus,
+} from "@/types/readingList";
 import type { ReadingEvidenceEvent } from "@/core/evidence";
-import type { ReadingListStatus } from "@/types/readingList";
 
 export interface LoadReadingListOptions {
   domain: string;
@@ -15,6 +20,23 @@ export interface AddTutorResourceSuggestionsOptions {
   suggestions: TutorResourceSuggestion[];
   repository: ReadingListRepository;
   evidenceId?: number | null;
+  now?: () => string;
+}
+
+export interface ResourceItemsToReadingListOptions {
+  domain: string;
+  items: ResourceItem[];
+  addedAt: string;
+  limit?: number;
+  status?: ReadingListStatus;
+}
+
+export interface AddResourceItemsToReadingListOptions {
+  domain: string;
+  items: ResourceItem[];
+  repository: ReadingListRepository;
+  limit?: number;
+  status?: ReadingListStatus;
   now?: () => string;
 }
 
@@ -77,6 +99,14 @@ const READING_LIST_STATUS_LABELS: Record<ReadingListStatus, string> = {
 
 const defaultNow = () => new Date().toISOString();
 
+const RESOURCE_KIND_TO_READING_KIND: Record<ResourceItemKind, ReadingListKind> = {
+  article: "article",
+  video: "video",
+  repo: "repo",
+  doc: "doc",
+  paper: "article",
+};
+
 function toViewItem(item: ReadingListItem): ReadingListViewItem {
   return {
     id: item.id ?? null,
@@ -130,9 +160,93 @@ function sourceIdForSuggestion(
   index: number,
   evidenceId: number | null | undefined,
   addedAt: string,
-): string {
+): string | null {
+  if (suggestion.sourceId !== undefined) {
+    return suggestion.sourceId;
+  }
   const base = typeof evidenceId === "number" ? `evidence-${evidenceId}` : addedAt;
   return `tutor:${base}:${index}:${suggestion.kind}`;
+}
+
+function limitItems<T>(items: T[], limit?: number): T[] {
+  return typeof limit === "number" ? items.slice(0, Math.max(0, limit)) : items;
+}
+
+function resourceItemReason(item: ResourceItem): string {
+  const parts = [item.summary, `source: ${item.sourceId}`].filter(
+    (part): part is string => Boolean(part),
+  );
+  const stars = item.metadata?.stars;
+  const language = item.metadata?.language;
+
+  if (typeof stars === "number") {
+    parts.push(`${stars} stars`);
+  }
+  if (typeof language === "string" && language) {
+    parts.push(language);
+  }
+
+  return parts.join(" · ");
+}
+
+export function resourceKindToReadingListKind(
+  kind: ResourceItemKind,
+): ReadingListKind {
+  return RESOURCE_KIND_TO_READING_KIND[kind];
+}
+
+export function resourceItemToTutorResourceSuggestion(
+  item: ResourceItem,
+): TutorResourceSuggestion {
+  return {
+    sourceId: item.id,
+    title: item.title,
+    kind: resourceKindToReadingListKind(item.kind),
+    url: item.url,
+    reason: resourceItemReason(item),
+  };
+}
+
+export function resourceItemsToTutorResourceSuggestions(
+  items: ResourceItem[],
+  limit?: number,
+): TutorResourceSuggestion[] {
+  return limitItems(items, limit).map(resourceItemToTutorResourceSuggestion);
+}
+
+export function resourceItemToReadingListItem(
+  item: ResourceItem,
+  options: {
+    domain: string;
+    addedAt: string;
+    status?: ReadingListStatus;
+  },
+): NewReadingListItem {
+  return {
+    domain: options.domain,
+    sourceId: item.id,
+    title: item.title,
+    url: item.url,
+    kind: resourceKindToReadingListKind(item.kind),
+    status: options.status ?? "todo",
+    addedAt: options.addedAt,
+  };
+}
+
+export function resourceItemsToReadingListItems({
+  domain,
+  items,
+  addedAt,
+  limit,
+  status,
+}: ResourceItemsToReadingListOptions): NewReadingListItem[] {
+  return limitItems(items, limit).map((item) =>
+    resourceItemToReadingListItem(item, {
+      domain,
+      addedAt,
+      status,
+    }),
+  );
 }
 
 export async function loadReadingList(
@@ -179,6 +293,28 @@ export async function addTutorResourceSuggestions(
         addedAt,
       }),
     ),
+  );
+
+  return inserted.map(toViewItem);
+}
+
+export async function addResourceItemsToReadingList(
+  options: AddResourceItemsToReadingListOptions,
+): Promise<ReadingListViewItem[]> {
+  if (options.items.length === 0) {
+    return [];
+  }
+
+  const addedAt = (options.now ?? defaultNow)();
+  const items = resourceItemsToReadingListItems({
+    domain: options.domain,
+    items: options.items,
+    addedAt,
+    limit: options.limit,
+    status: options.status,
+  });
+  const inserted = await Promise.all(
+    items.map((item) => options.repository.insert(item)),
   );
 
   return inserted.map(toViewItem);

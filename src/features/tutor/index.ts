@@ -98,6 +98,7 @@ export type TutorReplyGenerator = (
 ) => Promise<string> | string;
 
 export interface TutorResourceSuggestion {
+  sourceId?: string | null;
   title: string;
   kind: ReadingListKind;
   url?: string | null;

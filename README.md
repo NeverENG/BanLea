@@ -83,7 +83,7 @@ interface ResourceSource {
 | 适配器 | 状态 |
 |---|---|
 | 通用网页搜索（Claude web_search/fetch） | 首选 |
-| GitHub（官方 REST API） | 已接核心适配器，待接书单/界面 |
+| GitHub（官方 REST API） | 已接核心适配器与书单转换，待接界面 |
 | arXiv / 文档站 | 推荐 |
 | Bilibili / YouTube | 可选 |
 | 知乎（官方 OAuth） | 可选/预留 |
@@ -177,7 +177,7 @@ BanLea/
 | **M4** 书单 & 看板 | ✅ 完成 |
 | **M5** 推荐引擎 | ✅ 最小闭环完成 |
 | **M6** 画像可视化 | ✅ 最小闭环完成 |
-| **M7** 资料源 | 🔨 进行中（核心接口 + GitHub 适配器） |
+| **M7** 资料源 | 🔨 进行中（核心接口 + GitHub 适配器 + 书单转换） |
 | **M8** 打磨发布 | ⬜ |
 
 ---
