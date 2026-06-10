@@ -611,9 +611,10 @@ export default function App() {
     setFeedBusyId(item.id);
     setFeedMessage(feedbackKind === "click" ? "记录点击中" : "记录跳过中");
     try {
-      const [learningEvents, rankerWeights] = await Promise.all([
+      const [learningEvents, rankerWeights, recommendations] = await Promise.all([
         createRuntimeLearningService(),
         getRankerWeightRepository(),
+        getRecommendationRepository(),
       ]);
       const result = await recordFeedRecommendationFeedback({
         domain,
@@ -621,6 +622,7 @@ export default function App() {
         kind: feedbackKind,
         learningEvents,
         rankerWeights,
+        recommendations,
         dwellSeconds: feedbackKind === "click" ? dwellSeconds : undefined,
       });
       setLastEvidence(result.learning.evidence);

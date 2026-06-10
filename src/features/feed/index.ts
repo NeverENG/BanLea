@@ -60,6 +60,7 @@ export interface RecordFeedRecommendationFeedbackOptions {
     "recordRecommendationClick" | "recordRecommendationSkip"
   >;
   rankerWeights: RankerWeightRepository;
+  recommendations?: Pick<RecommendationRepository, "markClicked" | "markSkipped">;
   dwellSeconds?: number;
   now?: () => string;
 }
@@ -210,6 +211,7 @@ export async function recordFeedRecommendationFeedback({
   kind,
   learningEvents,
   rankerWeights,
+  recommendations,
   dwellSeconds,
   now = defaultNow,
 }: RecordFeedRecommendationFeedbackOptions): Promise<FeedRecommendationFeedbackResult> {
@@ -236,6 +238,14 @@ export async function recordFeedRecommendationFeedback({
           topic: item.topic,
           recommendationId: item.recommendationId ?? undefined,
         });
+
+  if (typeof item.recommendationId === "number" && recommendations) {
+    if (kind === "click") {
+      await recommendations.markClicked(item.recommendationId, dwellSeconds ?? 0);
+    } else {
+      await recommendations.markSkipped(item.recommendationId);
+    }
+  }
 
   await rankerWeights.upsertMany(weights, updatedAt);
 

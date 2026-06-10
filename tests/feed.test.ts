@@ -114,6 +114,16 @@ function recommendationRepository(): Pick<
   };
 }
 
+function recommendationFeedbackRepository(): Pick<
+  RecommendationRepository,
+  "markClicked" | "markSkipped"
+> {
+  return {
+    markClicked: vi.fn(async () => undefined),
+    markSkipped: vi.fn(async () => undefined),
+  };
+}
+
 function learningResult(): LearningEventResult {
   return {
     evidence: {
@@ -425,6 +435,7 @@ describe("recordFeedRecommendationFeedback", () => {
       recordRecommendationSkip: vi.fn(async () => result),
     };
     const rankerWeights = rankerWeightRepository();
+    const recommendations = recommendationFeedbackRepository();
 
     const feedback = await recordFeedRecommendationFeedback({
       domain: "computer_science",
@@ -433,6 +444,7 @@ describe("recordFeedRecommendationFeedback", () => {
       dwellSeconds: 120,
       learningEvents,
       rankerWeights,
+      recommendations,
       now: () => "2026-06-09T09:00:00.000Z",
     });
 
@@ -442,6 +454,8 @@ describe("recordFeedRecommendationFeedback", () => {
       recommendationId: 12,
       dwellSeconds: 120,
     });
+    expect(recommendations.markClicked).toHaveBeenCalledWith(12, 120);
+    expect(recommendations.markSkipped).not.toHaveBeenCalled();
     expect(learningEvents.recordRecommendationSkip).not.toHaveBeenCalled();
     expect(rankerWeights.upsertMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -462,6 +476,7 @@ describe("recordFeedRecommendationFeedback", () => {
       recordRecommendationSkip: vi.fn(async () => result),
     };
     const rankerWeights = rankerWeightRepository();
+    const recommendations = recommendationFeedbackRepository();
 
     const feedback = await recordFeedRecommendationFeedback({
       domain: "computer_science",
@@ -469,6 +484,7 @@ describe("recordFeedRecommendationFeedback", () => {
       kind: "skip",
       learningEvents,
       rankerWeights,
+      recommendations,
       now: () => "2026-06-09T09:00:00.000Z",
     });
 
@@ -477,6 +493,8 @@ describe("recordFeedRecommendationFeedback", () => {
       topic: "k8s",
       recommendationId: 12,
     });
+    expect(recommendations.markSkipped).toHaveBeenCalledWith(12);
+    expect(recommendations.markClicked).not.toHaveBeenCalled();
     expect(learningEvents.recordRecommendationClick).not.toHaveBeenCalled();
     expect(feedback.weights.interest_match).toBeLessThan(1.4);
   });
