@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
   loadPortraitTimeline,
 } from "@/features/portrait";
@@ -81,6 +82,14 @@ describe("loadPortraitTimeline", () => {
         confidence: 0.5,
         changeSummary: "v3",
         dimensionCount: 1,
+        dimensions: {
+          interest: {
+            score: 0.7,
+            confidence: 0.65,
+            summary: "对云原生兴趣较高",
+            evidenceIds: [1],
+          },
+        },
         nextFocus: null,
       },
       {
@@ -90,6 +99,14 @@ describe("loadPortraitTimeline", () => {
         confidence: 0.62,
         changeSummary: "v2",
         dimensionCount: 1,
+        dimensions: {
+          interest: {
+            score: 0.7,
+            confidence: 0.65,
+            summary: "对云原生兴趣较高",
+            evidenceIds: [1],
+          },
+        },
         nextFocus: "补 k8s workload",
       },
     ]);
@@ -138,5 +155,56 @@ describe("buildPortraitDimensionVisualItems", () => {
       label: "掌握程度",
       isLowConfidence: true,
     });
+  });
+});
+
+describe("buildPortraitDimensionTrendItems", () => {
+  it("extracts key dimension trends across portrait versions", () => {
+    const timeline = [
+      {
+        id: 2,
+        version: 2,
+        createdAt: "2026-06-09T08:10:00.000Z",
+        confidence: 0.7,
+        changeSummary: "v2",
+        dimensionCount: 1,
+        dimensions: {
+          interest: {
+            score: 0.8,
+            confidence: 0.7,
+            summary: "兴趣上升",
+            evidenceIds: [2],
+          },
+        },
+        nextFocus: null,
+      },
+      {
+        id: 1,
+        version: 1,
+        createdAt: "2026-06-09T08:00:00.000Z",
+        confidence: 0.6,
+        changeSummary: "v1",
+        dimensionCount: 1,
+        dimensions: {
+          interest: {
+            score: 0.5,
+            confidence: 0.6,
+            summary: "初始兴趣",
+            evidenceIds: [1],
+          },
+        },
+        nextFocus: null,
+      },
+    ];
+
+    const trends = buildPortraitDimensionTrendItems(timeline, {
+      keys: ["interest", "mastery"],
+    });
+
+    expect(trends).toHaveLength(1);
+    expect(trends[0].label).toBe("兴趣强度");
+    expect(trends[0].points.map((point) => point.version)).toEqual([1, 2]);
+    expect(trends[0].latestValue).toBe(0.8);
+    expect(trends[0].delta).toBeCloseTo(0.3);
   });
 });

@@ -1,5 +1,6 @@
 import type { LearningLoopStatus } from "@/features/events";
 import {
+  buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
   type PortraitTimelineItem,
 } from "./index";
@@ -38,6 +39,14 @@ function portraitSummary(status: LearningLoopStatus | null): string {
   }`;
 }
 
+function formatDelta(delta: number | null): string {
+  if (delta === null) {
+    return "-";
+  }
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(2)}`;
+}
+
 export function PortraitStatusPanel({
   status,
   timeline,
@@ -49,6 +58,7 @@ export function PortraitStatusPanel({
     status?.latest?.portrait ?? null,
     { limit: 6 },
   );
+  const trends = buildPortraitDimensionTrendItems(timeline, { limit: 4 });
 
   return (
     <>
@@ -95,6 +105,32 @@ export function PortraitStatusPanel({
               </div>
               <div className="mt-1 line-clamp-2 text-xs leading-5">
                 {item.summary}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="mt-5 text-sm font-medium">版本趋势</div>
+      <div className="mt-3 space-y-3 rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-muted)]">
+        {trends.length === 0 ? (
+          <div>暂无趋势</div>
+        ) : (
+          trends.map((item) => (
+            <div key={item.key}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="font-medium text-[var(--color-ink)]">{item.label}</div>
+                <div className="text-xs">{formatDelta(item.delta)}</div>
+              </div>
+              <div className="mt-2 flex h-8 items-end gap-1">
+                {item.points.map((point) => (
+                  <div
+                    className="min-w-3 flex-1 rounded-t bg-[var(--color-accent)]"
+                    key={`${item.key}-${point.version}`}
+                    style={{ height: `${Math.max(8, Math.round(point.value * 32))}px` }}
+                    title={`v${point.version} · ${point.value.toFixed(2)}`}
+                  />
+                ))}
               </div>
             </div>
           ))

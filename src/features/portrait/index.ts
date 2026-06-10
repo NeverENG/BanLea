@@ -23,6 +23,7 @@ export interface PortraitTimelineItem {
   confidence: number;
   changeSummary: string | null;
   dimensionCount: number;
+  dimensions: Portrait["dimensions"];
   nextFocus: string | null;
 }
 
@@ -43,6 +44,27 @@ export interface PortraitDimensionVisualItem {
 export interface BuildPortraitDimensionVisualItemsOptions {
   limit?: number;
   lowConfidenceThreshold?: number;
+}
+
+export interface PortraitDimensionTrendPoint {
+  version: number;
+  createdAt: string;
+  score: number | null;
+  confidence: number;
+  value: number;
+}
+
+export interface PortraitDimensionTrendItem {
+  key: DimensionKey;
+  label: string;
+  points: PortraitDimensionTrendPoint[];
+  latestValue: number;
+  delta: number | null;
+}
+
+export interface BuildPortraitDimensionTrendItemsOptions {
+  keys?: DimensionKey[];
+  limit?: number;
 }
 
 function clamp01(value: number): number {
@@ -97,6 +119,62 @@ export function buildPortraitDimensionVisualItems(
     .slice(0, limit);
 }
 
+const DEFAULT_TREND_KEYS: DimensionKey[] = [
+  "mastery",
+  "progress",
+  "interest",
+  "velocity",
+];
+
+export function buildPortraitDimensionTrendItems(
+  timeline: PortraitTimelineItem[],
+  options: BuildPortraitDimensionTrendItemsOptions = {},
+): PortraitDimensionTrendItem[] {
+  const keys = options.keys ?? DEFAULT_TREND_KEYS;
+  const limit = options.limit ?? 4;
+  return keys
+    .flatMap((key): PortraitDimensionTrendItem[] => {
+      const points = timeline
+        .slice()
+        .sort((left, right) => left.version - right.version)
+        .flatMap((item): PortraitDimensionTrendPoint[] => {
+          const dimension = item.dimensions[key];
+          if (!dimension) {
+            return [];
+          }
+          const score =
+            typeof dimension.score === "number" ? clamp01(dimension.score) : null;
+          const confidence = clamp01(dimension.confidence);
+          return [
+            {
+              version: item.version,
+              createdAt: item.createdAt,
+              score,
+              confidence,
+              value: score ?? confidence,
+            },
+          ];
+        });
+
+      if (points.length === 0) {
+        return [];
+      }
+
+      const first = points[0];
+      const latest = points[points.length - 1];
+      return [
+        {
+          key,
+          label: DIMENSION_META[key].label,
+          points,
+          latestValue: latest.value,
+          delta: points.length > 1 ? latest.value - first.value : null,
+        },
+      ];
+    })
+    .slice(0, limit);
+}
+
 function toTimelineItem(record: PortraitVersionRecord): PortraitTimelineItem {
   return {
     id: record.id,
@@ -105,6 +183,7 @@ function toTimelineItem(record: PortraitVersionRecord): PortraitTimelineItem {
     confidence: record.confidence,
     changeSummary: record.changeSummary,
     dimensionCount: Object.keys(record.portrait.dimensions).length,
+    dimensions: record.portrait.dimensions,
     nextFocus: record.portrait.nextFocus ?? null,
   };
 }

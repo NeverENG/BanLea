@@ -54,6 +54,7 @@ const portraits: PortraitTimelineItem[] = [
     confidence: 0.72,
     changeSummary: "updated",
     dimensionCount: 2,
+    dimensions: {},
     nextFocus: "k8s",
   },
 ];
