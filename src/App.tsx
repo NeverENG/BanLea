@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createGitHubResourceSource, type ResourceSourceId } from "@/core/sources";
 import {
   getEvidenceRepository,
   getOnboardingProfileRepository,
@@ -74,6 +75,7 @@ import {
   type TutorCheckQuestion,
   type TutorMessage,
 } from "@/features/tutor";
+import { createSourceBackedTutorResourceSuggestionProvider } from "@/features/tutor/sourceSuggestions";
 import type { Evidence } from "@/types/evidence";
 import type {
   HarnessRunRepositories,
@@ -81,7 +83,6 @@ import type {
 } from "@/core/harness";
 import type { ReadingListStatus } from "@/types/readingList";
 import type { OnboardingProfile } from "@/types/onboarding";
-import type { ResourceSourceId } from "@/core/sources";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
 type WorkspaceView = "tutor" | "reading" | "dashboard" | "feed";
@@ -133,6 +134,16 @@ const EMPTY_DASHBOARD_SUMMARY: LearningDashboardSummary = {
   portraitVersionCount: 0,
   lastActivityAt: null,
 };
+
+function createRuntimeResourceSources(statuses: ResourceSourceRuntimeStatus[]) {
+  const enabledIds = new Set(enabledResourceSourceIds(statuses));
+  return [
+    createGitHubResourceSource({
+      enabled: enabledIds.has("github"),
+      perPage: 3,
+    }),
+  ];
+}
 
 function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
@@ -595,6 +606,12 @@ export default function App() {
       const replyGenerator = isClaudeReady
         ? (await import("@/features/tutor/claudeReply")).createClaudeTutorReplyGenerator()
         : undefined;
+      const resourceSuggestionProvider =
+        createSourceBackedTutorResourceSuggestionProvider({
+          sources: createRuntimeResourceSources(resourceSourceStatuses),
+          fallbackProvider: createLocalTutorResourceSuggestions,
+          sourceLimit: 3,
+        });
       const service = createTutorInputService({
         learningEvents,
         promptContextProvider: ({ domain: targetDomain }) =>
@@ -603,7 +620,7 @@ export default function App() {
             portraits: portraitRepository,
           }),
         replyGenerator,
-        resourceSuggestionProvider: createLocalTutorResourceSuggestions,
+        resourceSuggestionProvider,
         checkQuestionProvider: createLocalTutorCheckQuestion,
       });
       const result = await service.sendUserMessage({
