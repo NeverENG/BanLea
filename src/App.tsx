@@ -36,6 +36,12 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
+import { ResourceSourceSettingsPanel } from "@/features/settings/ResourceSourceSettingsPanel";
+import {
+  createResourceSourceSettingsService,
+  enabledResourceSourceIds,
+  type ResourceSourceRuntimeStatus,
+} from "@/features/settings/resourceSourceSettings";
 import {
   buildOnboardingSeedProfileFromProfile,
   onboardingProfileToStatement,
@@ -75,6 +81,7 @@ import type {
 } from "@/core/harness";
 import type { ReadingListStatus } from "@/types/readingList";
 import type { OnboardingProfile } from "@/types/onboarding";
+import type { ResourceSourceId } from "@/core/sources";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
 type WorkspaceView = "tutor" | "reading" | "dashboard" | "feed";
@@ -165,6 +172,11 @@ export default function App() {
   const [apiKeyMessage, setApiKeyMessage] = useState("未设置");
   const [isKeyBusy, setIsKeyBusy] = useState(false);
   const [isClaudeReady, setIsClaudeReady] = useState(false);
+  const [resourceSourceStatuses, setResourceSourceStatuses] = useState<
+    ResourceSourceRuntimeStatus[]
+  >([]);
+  const [resourceSourceMessage, setResourceSourceMessage] = useState("未读取");
+  const [isResourceSourceBusy, setIsResourceSourceBusy] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [onboardingGoal, setOnboardingGoal] = useState("");
   const [onboardingInterests, setOnboardingInterests] = useState("");
@@ -202,6 +214,10 @@ export default function App() {
   const [isCheckSaving, setIsCheckSaving] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
+  const resourceSourceSettingsService = useMemo(
+    () => createResourceSourceSettingsService(),
+    [],
+  );
 
   const selectedLabel = useMemo(
     () => EVENT_OPTIONS.find((option) => option.kind === kind)?.label ?? kind,
@@ -250,6 +266,36 @@ export default function App() {
       cancelled = true;
     };
   }, [apiKeyService]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsResourceSourceBusy(true);
+    resourceSourceSettingsService
+      .loadStatus()
+      .then((statuses) => {
+        if (!cancelled) {
+          setResourceSourceStatuses(statuses);
+          setResourceSourceMessage(
+            `可用源：${enabledResourceSourceIds(statuses).length}`,
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setResourceSourceMessage(
+            error instanceof Error ? error.message : "读取失败",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsResourceSourceBusy(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [resourceSourceSettingsService]);
 
   useEffect(() => {
     let cancelled = false;
@@ -415,6 +461,44 @@ export default function App() {
       setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
     } finally {
       setIsKeyBusy(false);
+    }
+  }
+
+  async function refreshResourceSources() {
+    setIsResourceSourceBusy(true);
+    setResourceSourceMessage("读取中");
+    try {
+      const statuses = await resourceSourceSettingsService.loadStatus();
+      setResourceSourceStatuses(statuses);
+      setResourceSourceMessage(
+        `可用源：${enabledResourceSourceIds(statuses).length}`,
+      );
+    } catch (error) {
+      setResourceSourceMessage(error instanceof Error ? error.message : "读取失败");
+    } finally {
+      setIsResourceSourceBusy(false);
+    }
+  }
+
+  async function toggleResourceSource(
+    sourceId: ResourceSourceId,
+    enabled: boolean,
+  ) {
+    setIsResourceSourceBusy(true);
+    setResourceSourceMessage("保存中");
+    try {
+      const statuses = await resourceSourceSettingsService.setEnabled(
+        sourceId,
+        enabled,
+      );
+      setResourceSourceStatuses(statuses);
+      setResourceSourceMessage(
+        `可用源：${enabledResourceSourceIds(statuses).length}`,
+      );
+    } catch (error) {
+      setResourceSourceMessage(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setIsResourceSourceBusy(false);
     }
   }
 
@@ -969,6 +1053,14 @@ export default function App() {
             </div>
             <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyMessage}</div>
           </div>
+
+          <ResourceSourceSettingsPanel
+            isBusy={isResourceSourceBusy}
+            message={resourceSourceMessage}
+            onRefresh={refreshResourceSources}
+            onToggle={toggleResourceSource}
+            statuses={resourceSourceStatuses}
+          />
 
           <div className="mt-5 text-sm font-medium">冷启动</div>
           <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
