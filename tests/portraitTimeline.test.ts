@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
+  buildPortraitRadarModel,
   buildPortraitRevisionEvidenceDraft,
   loadPortraitTimeline,
   recordPortraitRevisionRequest,
@@ -157,6 +158,45 @@ describe("buildPortraitDimensionVisualItems", () => {
       label: "掌握程度",
       isLowConfidence: true,
     });
+  });
+});
+
+describe("buildPortraitRadarModel", () => {
+  it("projects dimension values into radar points", () => {
+    const items = buildPortraitDimensionVisualItems(
+      portrait({
+        dimensions: {
+          mastery: {
+            score: 1,
+            confidence: 0.9,
+            summary: "强",
+            evidenceIds: [1],
+          },
+          progress: {
+            score: 0.5,
+            confidence: 0.8,
+            summary: "中",
+            evidenceIds: [2],
+          },
+          interest: {
+            score: 0,
+            confidence: 0.7,
+            summary: "低",
+            evidenceIds: [3],
+          },
+        },
+      }),
+    );
+
+    const radar = buildPortraitRadarModel(items, 100);
+
+    expect(radar.size).toBe(100);
+    expect(radar.center).toBe(50);
+    expect(radar.points).toHaveLength(3);
+    expect(radar.points[0].value).toBe(1);
+    expect(radar.points[1].value).toBe(0.5);
+    expect(radar.points[2].value).toBe(0);
+    expect(radar.polygonPoints.split(" ")).toHaveLength(3);
   });
 });
 

@@ -63,6 +63,24 @@ export interface PortraitDimensionTrendItem {
   delta: number | null;
 }
 
+export interface PortraitRadarPoint {
+  key: DimensionKey;
+  label: string;
+  value: number;
+  x: number;
+  y: number;
+  axisX: number;
+  axisY: number;
+}
+
+export interface PortraitRadarModel {
+  size: number;
+  center: number;
+  radius: number;
+  points: PortraitRadarPoint[];
+  polygonPoints: string;
+}
+
 export interface BuildPortraitDimensionTrendItemsOptions {
   keys?: DimensionKey[];
   limit?: number;
@@ -199,6 +217,37 @@ export function buildPortraitDimensionTrendItems(
       ];
     })
     .slice(0, limit);
+}
+
+export function buildPortraitRadarModel(
+  items: PortraitDimensionVisualItem[],
+  size = 160,
+): PortraitRadarModel {
+  const center = size / 2;
+  const radius = Math.max(0, center - 18);
+  const points = items.map((item, index) => {
+    const angle = -Math.PI / 2 + (index / items.length) * Math.PI * 2;
+    const axisX = center + Math.cos(angle) * radius;
+    const axisY = center + Math.sin(angle) * radius;
+    const value = clamp01(item.value);
+    return {
+      key: item.key,
+      label: item.label,
+      value,
+      x: center + Math.cos(angle) * radius * value,
+      y: center + Math.sin(angle) * radius * value,
+      axisX,
+      axisY,
+    };
+  });
+
+  return {
+    size,
+    center,
+    radius,
+    points,
+    polygonPoints: points.map((point) => `${point.x},${point.y}`).join(" "),
+  };
 }
 
 export function buildPortraitRevisionEvidenceDraft(

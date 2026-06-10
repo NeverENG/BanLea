@@ -3,6 +3,7 @@ import type { LearningLoopStatus } from "@/features/events";
 import {
   buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
+  buildPortraitRadarModel,
   type PortraitDimensionVisualItem,
   type PortraitTimelineItem,
 } from "./index";
@@ -73,6 +74,7 @@ export function PortraitStatusPanel({
     status?.latest?.portrait ?? null,
     { limit: 6 },
   );
+  const radar = buildPortraitRadarModel(dimensions.slice(0, 6), 176);
   const trends = buildPortraitDimensionTrendItems(timeline, { limit: 4 });
   const selectedDimension =
     dimensions.find((item) => item.key === selectedDimensionKey) ??
@@ -112,6 +114,49 @@ export function PortraitStatusPanel({
 
       <div className="mt-5 text-sm font-medium">维度概览</div>
       <div className="mt-3 space-y-3 rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-muted)]">
+        {radar.points.length >= 3 ? (
+          <svg
+            aria-label="画像雷达图"
+            className="mx-auto mb-2 block"
+            height={radar.size}
+            role="img"
+            viewBox={`0 0 ${radar.size} ${radar.size}`}
+            width={radar.size}
+          >
+            {[0.33, 0.66, 1].map((scale) => (
+              <circle
+                className="fill-none stroke-[var(--color-border)]"
+                cx={radar.center}
+                cy={radar.center}
+                key={scale}
+                r={radar.radius * scale}
+              />
+            ))}
+            {radar.points.map((point) => (
+              <line
+                className="stroke-[var(--color-border)]"
+                key={`${point.key}-axis`}
+                x1={radar.center}
+                x2={point.axisX}
+                y1={radar.center}
+                y2={point.axisY}
+              />
+            ))}
+            <polygon
+              className="fill-[var(--color-accent)] opacity-20 stroke-[var(--color-accent)]"
+              points={radar.polygonPoints}
+            />
+            {radar.points.map((point) => (
+              <circle
+                className="fill-[var(--color-accent)]"
+                cx={point.x}
+                cy={point.y}
+                key={`${point.key}-point`}
+                r="3"
+              />
+            ))}
+          </svg>
+        ) : null}
         {dimensions.length === 0 ? (
           <div>暂无维度</div>
         ) : (
