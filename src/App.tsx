@@ -156,6 +156,14 @@ function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
 }
 
+function friendlyErrorMessage(error: unknown, fallback: string): string {
+  const message = error instanceof Error ? error.message : fallback;
+  return message.includes("Cannot read properties of undefined") &&
+    message.includes("invoke")
+    ? "桌面端运行时可用，浏览器预览不连接本地存储"
+    : message;
+}
+
 async function runLiveHarnessUpdate(
   evidence: Evidence,
   repositories: HarnessRunRepositories,
@@ -273,7 +281,7 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
+          setApiKeyMessage(friendlyErrorMessage(error, "读取失败"));
         }
       })
       .finally(() => {
@@ -301,9 +309,7 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setResourceSourceMessage(
-            error instanceof Error ? error.message : "读取失败",
-          );
+          setResourceSourceMessage(friendlyErrorMessage(error, "读取失败"));
         }
       })
       .finally(() => {
@@ -328,7 +334,7 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
+          setLoopStatusMessage(friendlyErrorMessage(error, "读取失败"));
         }
       })
       .finally(() => {
@@ -358,9 +364,7 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setOnboardingMessage(
-            error instanceof Error ? error.message : "读取建档失败",
-          );
+          setOnboardingMessage(friendlyErrorMessage(error, "读取建档失败"));
         }
       });
 
@@ -420,7 +424,7 @@ export default function App() {
     syncFeedRecommendations().catch((error: unknown) => {
       if (!cancelled) {
         setFeedMessage(
-          error instanceof Error ? error.message : "推荐候选同步失败",
+          friendlyErrorMessage(error, "推荐候选同步失败"),
         );
       }
     });
@@ -444,7 +448,7 @@ export default function App() {
       setApiKeyInput("");
       setApiKeyMessage(next.clientInitialized ? "已保存并初始化" : "已保存");
     } catch (error) {
-      setApiKeyMessage(error instanceof Error ? error.message : "保存失败");
+      setApiKeyMessage(friendlyErrorMessage(error, "保存失败"));
     } finally {
       setIsKeyBusy(false);
     }
@@ -460,7 +464,7 @@ export default function App() {
       setApiKeyInput("");
       setApiKeyMessage("已删除");
     } catch (error) {
-      setApiKeyMessage(error instanceof Error ? error.message : "删除失败");
+      setApiKeyMessage(friendlyErrorMessage(error, "删除失败"));
     } finally {
       setIsKeyBusy(false);
     }
@@ -477,7 +481,7 @@ export default function App() {
       setIsClaudeReady(next.clientInitialized);
       setApiKeyMessage(next.clientInitialized ? "已初始化" : "未设置");
     } catch (error) {
-      setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
+      setApiKeyMessage(friendlyErrorMessage(error, "读取失败"));
     } finally {
       setIsKeyBusy(false);
     }
@@ -493,7 +497,7 @@ export default function App() {
         `可用源：${enabledResourceSourceIds(statuses).length}`,
       );
     } catch (error) {
-      setResourceSourceMessage(error instanceof Error ? error.message : "读取失败");
+      setResourceSourceMessage(friendlyErrorMessage(error, "读取失败"));
     } finally {
       setIsResourceSourceBusy(false);
     }
@@ -515,7 +519,7 @@ export default function App() {
         `可用源：${enabledResourceSourceIds(statuses).length}`,
       );
     } catch (error) {
-      setResourceSourceMessage(error instanceof Error ? error.message : "保存失败");
+      setResourceSourceMessage(friendlyErrorMessage(error, "保存失败"));
     } finally {
       setIsResourceSourceBusy(false);
     }
@@ -559,7 +563,7 @@ export default function App() {
       setOnboardingMessage("已保存");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setOnboardingMessage(error instanceof Error ? error.message : "保存建档失败");
+      setOnboardingMessage(friendlyErrorMessage(error, "保存建档失败"));
     } finally {
       setIsOnboardingSaving(false);
     }
@@ -590,7 +594,7 @@ export default function App() {
       applyDomainLearningSnapshot(next);
       setLoopStatusMessage("已刷新");
     } catch (error) {
-      setLoopStatusMessage(error instanceof Error ? error.message : "读取失败");
+      setLoopStatusMessage(friendlyErrorMessage(error, "读取失败"));
     } finally {
       setIsLoopStatusLoading(false);
     }
@@ -659,7 +663,7 @@ export default function App() {
       setStatus("已发送");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "发送失败");
+      setStatus(friendlyErrorMessage(error, "发送失败"));
     } finally {
       setIsSending(false);
     }
@@ -683,7 +687,7 @@ export default function App() {
       setStatus("已记录验证");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "记录验证失败");
+      setStatus(friendlyErrorMessage(error, "记录验证失败"));
     } finally {
       setIsCheckSaving(false);
     }
@@ -716,7 +720,7 @@ export default function App() {
       setReadingListMessage("已更新");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setReadingListMessage(error instanceof Error ? error.message : "更新失败");
+      setReadingListMessage(friendlyErrorMessage(error, "更新失败"));
     } finally {
       setReadingListBusyId(null);
     }
@@ -748,7 +752,7 @@ export default function App() {
       setFeedMessage(feedbackKind === "click" ? "已记录点击" : "已记录跳过");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setFeedMessage(error instanceof Error ? error.message : "记录反馈失败");
+      setFeedMessage(friendlyErrorMessage(error, "记录反馈失败"));
     } finally {
       setFeedBusyId(null);
     }
@@ -774,7 +778,7 @@ export default function App() {
       await refreshLoopStatus(domain);
     } catch (error) {
       setPortraitRevisionMessage(
-        error instanceof Error ? error.message : "提交协商失败",
+        friendlyErrorMessage(error, "提交协商失败"),
       );
     } finally {
       setIsPortraitRevisionSaving(false);
@@ -839,7 +843,7 @@ export default function App() {
       setStatus("已写入 evidence");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "写入失败");
+      setStatus(friendlyErrorMessage(error, "写入失败"));
     } finally {
       setIsSaving(false);
     }
@@ -904,7 +908,7 @@ export default function App() {
 
           <div className="min-h-0 flex-1 overflow-hidden bg-[var(--color-canvas)]">
             {workspaceView === "tutor" ? (
-              <div className="grid h-full min-h-0 gap-4 overflow-hidden p-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="grid h-full min-h-0 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
                 <section className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
                   <div className="flex flex-col gap-3 border-b border-[var(--color-border)] px-5 py-4 md:flex-row md:items-center md:justify-between">
                     <div>
@@ -995,7 +999,7 @@ export default function App() {
                   )}
                 </section>
 
-                <aside className="min-h-0 space-y-4 overflow-y-auto">
+                <aside className="space-y-4 lg:min-h-0 lg:overflow-y-auto">
                   <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                     <div className="text-sm font-medium">快速记录</div>
                     <div className="mt-3 grid grid-cols-3 gap-2">
@@ -1106,15 +1110,17 @@ export default function App() {
                 </aside>
               </div>
             ) : workspaceView === "dashboard" ? (
-              <DashboardWorkspaceView
-                evidence={evidenceTimeline}
-                isLoading={isLoopStatusLoading}
-                message={loopStatusMessage}
-                onRefresh={() => refreshLoopStatus()}
-                portraits={portraitTimeline}
-                status={loopStatus}
-                summary={dashboardSummary}
-              />
+              <div className="h-full min-h-0 overflow-y-auto">
+                <DashboardWorkspaceView
+                  evidence={evidenceTimeline}
+                  isLoading={isLoopStatusLoading}
+                  message={loopStatusMessage}
+                  onRefresh={() => refreshLoopStatus()}
+                  portraits={portraitTimeline}
+                  status={loopStatus}
+                  summary={dashboardSummary}
+                />
+              </div>
             ) : workspaceView === "portrait" ? (
               <div className="grid h-full min-h-0 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

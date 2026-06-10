@@ -5,14 +5,35 @@ import { invoke } from "@tauri-apps/api/core";
  * 仅在 Tauri 运行时可用。
  */
 
+const NON_TAURI_ERROR = "API Key 仅在 Tauri 桌面端可用";
+
+function isTauriRuntime(): boolean {
+  return Boolean(
+    (globalThis as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
+  );
+}
+
+function rejectOutsideTauri<T>(): Promise<T> {
+  return Promise.reject(new Error(NON_TAURI_ERROR));
+}
+
 export function saveApiKey(key: string): Promise<void> {
+  if (!isTauriRuntime()) {
+    return rejectOutsideTauri();
+  }
   return invoke<void>("save_api_key", { key });
 }
 
 export function getApiKey(): Promise<string | null> {
+  if (!isTauriRuntime()) {
+    return rejectOutsideTauri();
+  }
   return invoke<string | null>("get_api_key");
 }
 
 export function deleteApiKey(): Promise<void> {
+  if (!isTauriRuntime()) {
+    return rejectOutsideTauri();
+  }
   return invoke<void>("delete_api_key");
 }
