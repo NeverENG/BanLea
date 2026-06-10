@@ -1,5 +1,6 @@
 import type { RecommendationTopicSeed } from "@/core/recommender";
 import type { EvidenceTimelineItem } from "@/features/evidence";
+import type { OnboardingProfile } from "@/types/onboarding";
 
 export const ONBOARDING_DIMENSION_HINTS = [
   "goal_orientation",
@@ -41,6 +42,22 @@ function payloadStringArray(value: unknown): string[] {
 
 function payloadNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+export function splitOnboardingInterestsInput(value: string): string[] {
+  return value
+    .split(/[\n,，;；、]+/g)
+    .map(normalizeStatement)
+    .filter(Boolean);
+}
+
+export function onboardingProfileToStatement(profile: OnboardingProfile): string {
+  const parts = [
+    profile.goal ? `目标：${profile.goal}` : "",
+    profile.interests.length > 0 ? `兴趣：${profile.interests.join("、")}` : "",
+    profile.background ? `背景：${profile.background}` : "",
+  ].filter(Boolean);
+  return parts.join("\n");
 }
 
 export function buildOnboardingSeedProfile(
@@ -118,4 +135,41 @@ export function buildOnboardingSeedProfileFromEvidence(
   });
 
   return buildOnboardingSeedProfile(answers, limit);
+}
+
+export function buildOnboardingSeedProfileFromProfile(
+  profile: OnboardingProfile | null,
+  limit = 5,
+): OnboardingSeedProfile {
+  if (!profile) {
+    return {
+      topicSeeds: [],
+      dimensionHints: [],
+    };
+  }
+
+  return buildOnboardingSeedProfile(
+    [
+      profile.goal
+        ? {
+            statement: profile.goal,
+            confidenceScore: 0.85,
+            dimensionHints: ["goal_orientation", "interest"],
+          }
+        : null,
+      ...profile.interests.map((interest): OnboardingAnswer => ({
+        statement: interest,
+        confidenceScore: 0.8,
+        dimensionHints: ["interest"],
+      })),
+      profile.background
+        ? {
+            statement: profile.background,
+            confidenceScore: 0.65,
+            dimensionHints: ["resource_preference", "goal_orientation"],
+          }
+        : null,
+    ].filter((answer): answer is OnboardingAnswer => answer !== null),
+    limit,
+  );
 }

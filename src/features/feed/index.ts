@@ -9,7 +9,10 @@ import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
 import type { RecommendationRepository } from "@/db/recommendationRepo";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
 import type { LearningEventResult, LearningEventService } from "@/features/events";
-import { buildOnboardingSeedProfileFromEvidence } from "@/features/onboarding";
+import {
+  buildOnboardingSeedProfileFromEvidence,
+  type OnboardingSeedProfile,
+} from "@/features/onboarding";
 import type { Recommendation } from "@/types/recommendation";
 
 export interface FeedRecommendationItem {
@@ -36,6 +39,7 @@ export interface BuildFeedRecommendationViewOptions {
   limit?: number;
   recentMessageLimit?: number;
   weights?: RecommenderWeights;
+  onboarding?: OnboardingSeedProfile | null;
 }
 
 export interface PersistFeedRecommendationViewOptions {
@@ -165,10 +169,14 @@ export function buildFeedRecommendationView({
   limit = 8,
   recentMessageLimit = 3,
   weights,
+  onboarding,
 }: BuildFeedRecommendationViewOptions): FeedRecommendationViewModel {
-  const onboarding = buildOnboardingSeedProfileFromEvidence(snapshot.evidenceTimeline);
+  const evidenceOnboarding = buildOnboardingSeedProfileFromEvidence(
+    snapshot.evidenceTimeline,
+  );
   const topicSeeds = [
-    ...onboarding.topicSeeds,
+    ...(onboarding?.topicSeeds ?? []),
+    ...evidenceOnboarding.topicSeeds,
     ...portraitTopicSeeds(snapshot),
     ...recentUserTopicSeeds(snapshot, recentMessageLimit),
   ];

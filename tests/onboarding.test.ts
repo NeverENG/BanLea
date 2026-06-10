@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildOnboardingSeedProfile,
   buildOnboardingSeedProfileFromEvidence,
+  buildOnboardingSeedProfileFromProfile,
   ONBOARDING_DIMENSION_HINTS,
+  onboardingProfileToStatement,
+  splitOnboardingInterestsInput,
 } from "@/features/onboarding";
 
 describe("onboarding seeds", () => {
@@ -67,5 +70,39 @@ describe("onboarding seeds", () => {
     ]);
     expect(profile.topicSeeds[0].strength).toBe(0.8);
     expect(profile.dimensionHints).toContain("interest");
+  });
+
+  it("builds onboarding seeds from a persisted profile", () => {
+    const profile = {
+      domain: "computer_science",
+      goal: "掌握 k8s 实战",
+      interests: ["网络", "调度"],
+      background: "后端工程师",
+      updatedAt: "2026-06-09T11:00:00.000Z",
+    };
+
+    const seeds = buildOnboardingSeedProfileFromProfile(profile);
+
+    expect(seeds.topicSeeds.map((seed) => seed.topic)).toEqual([
+      "掌握 k8s 实战",
+      "网络",
+      "调度",
+      "后端工程师",
+    ]);
+    expect(seeds.dimensionHints).toEqual(
+      expect.arrayContaining(["goal_orientation", "interest"]),
+    );
+    expect(onboardingProfileToStatement(profile)).toBe(
+      "目标：掌握 k8s 实战\n兴趣：网络、调度\n背景：后端工程师",
+    );
+  });
+
+  it("splits onboarding interest input by common separators", () => {
+    expect(splitOnboardingInterestsInput("k8s, 分布式系统\n网络；调度")).toEqual([
+      "k8s",
+      "分布式系统",
+      "网络",
+      "调度",
+    ]);
   });
 });

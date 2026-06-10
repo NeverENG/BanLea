@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
+import { createOnboardingProfileRepository } from "@/db/onboardingProfileRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
 import { createRankerWeightRepository } from "@/db/rankerWeightRepo";
 import { createRecommendationRepository } from "@/db/recommendationRepo";
@@ -10,6 +11,7 @@ import type { NewEvidence } from "@/types/evidence";
 import type { Portrait } from "@/types/portrait";
 import type { NewReadingListItem } from "@/types/readingList";
 import type { NewRecommendation } from "@/types/recommendation";
+import type { NewOnboardingProfile } from "@/types/onboarding";
 
 interface SqlCall {
   query: string;
@@ -96,6 +98,19 @@ function newRecommendation(
       novelty: 0.4,
     },
     score: 1.6,
+    ...overrides,
+  };
+}
+
+function newOnboardingProfile(
+  overrides: Partial<NewOnboardingProfile> = {},
+): NewOnboardingProfile {
+  return {
+    domain: "computer_science",
+    goal: "掌握 k8s 实战",
+    interests: ["网络", "调度"],
+    background: "后端工程师",
+    updatedAt: "2026-06-09T11:00:00.000Z",
     ...overrides,
   };
 }
@@ -371,6 +386,53 @@ describe("rankerWeightRepository", () => {
     expect(db.executeCalls.map((call) => call.bindValues)).toEqual([
       ["interest_match", 1.5, "2026-06-09T10:00:00.000Z"],
       ["novelty", 0.8, "2026-06-09T10:00:00.000Z"],
+    ]);
+  });
+});
+
+describe("onboardingProfileRepository", () => {
+  it("getByDomain 读取并解析 onboarding profile", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          domain_id: "computer_science",
+          goal: "掌握 k8s 实战",
+          interests_json: JSON.stringify(["网络", "调度"]),
+          background: "后端工程师",
+          updated_at: "2026-06-09T11:00:00.000Z",
+        },
+      ],
+    ]);
+
+    const profile = await createOnboardingProfileRepository(db).getByDomain(
+      "computer_science",
+    );
+
+    expect(profile).toEqual({
+      domain: "computer_science",
+      goal: "掌握 k8s 实战",
+      interests: ["网络", "调度"],
+      background: "后端工程师",
+      updatedAt: "2026-06-09T11:00:00.000Z",
+    });
+    expect(db.selectCalls[0].query).toContain("FROM onboarding_profiles");
+    expect(db.selectCalls[0].bindValues).toEqual(["computer_science"]);
+  });
+
+  it("upsert 写入或更新 onboarding profile", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }]);
+    const input = newOnboardingProfile();
+
+    const saved = await createOnboardingProfileRepository(db).upsert(input);
+
+    expect(saved).toEqual(input);
+    expect(db.executeCalls[0].query).toContain("ON CONFLICT(domain_id)");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      "computer_science",
+      "掌握 k8s 实战",
+      JSON.stringify(["网络", "调度"]),
+      "后端工程师",
+      "2026-06-09T11:00:00.000Z",
     ]);
   });
 });

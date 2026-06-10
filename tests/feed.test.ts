@@ -262,6 +262,27 @@ describe("buildFeedRecommendationView", () => {
     expect(view.emptyReason).toBeNull();
   });
 
+  it("uses persisted onboarding profile seeds", () => {
+    const view = buildFeedRecommendationView({
+      snapshot: snapshot(),
+      onboarding: {
+        topicSeeds: [
+          {
+            topic: "分布式系统",
+            source: "manual",
+            reason: "来自冷启动自评",
+            strength: 0.8,
+          },
+        ],
+        dimensionHints: ["interest"],
+      },
+    });
+
+    expect(view.items[0].topic).toBe("分布式系统");
+    expect(view.items[0].reason).toBe("来自冷启动自评");
+    expect(view.sourceCounts.topicSeeds).toBe(1);
+  });
+
   it("ignores assistant messages and completed reading items", () => {
     const view = buildFeedRecommendationView({
       snapshot: snapshot({

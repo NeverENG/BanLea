@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getEvidenceRepository,
+  getOnboardingProfileRepository,
   getPortraitRepository,
   getRankerWeightRepository,
   getRecommendationRepository,
@@ -35,7 +36,12 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
-import { ONBOARDING_DIMENSION_HINTS } from "@/features/onboarding";
+import {
+  buildOnboardingSeedProfileFromProfile,
+  onboardingProfileToStatement,
+  ONBOARDING_DIMENSION_HINTS,
+  splitOnboardingInterestsInput,
+} from "@/features/onboarding";
 import type { PortraitTimelineItem } from "@/features/portrait";
 import { PortraitStatusPanel } from "@/features/portrait/PortraitStatusPanel";
 import { saveTutorTurnMessages } from "@/features/history";
@@ -62,6 +68,7 @@ import type {
   TriggeredHarnessUpdateResult,
 } from "@/core/harness";
 import type { ReadingListStatus } from "@/types/readingList";
+import type { OnboardingProfile } from "@/types/onboarding";
 
 type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
 type WorkspaceView = "tutor" | "reading" | "dashboard" | "feed";
@@ -153,6 +160,13 @@ export default function App() {
   const [isKeyBusy, setIsKeyBusy] = useState(false);
   const [isClaudeReady, setIsClaudeReady] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [onboardingGoal, setOnboardingGoal] = useState("");
+  const [onboardingInterests, setOnboardingInterests] = useState("");
+  const [onboardingBackground, setOnboardingBackground] = useState("");
+  const [onboardingProfile, setOnboardingProfile] =
+    useState<OnboardingProfile | null>(null);
+  const [onboardingMessage, setOnboardingMessage] = useState("未建档");
+  const [isOnboardingSaving, setIsOnboardingSaving] = useState(false);
   const [domainSnapshot, setDomainSnapshot] = useState<DomainLearningSnapshot | null>(
     null,
   );
@@ -254,12 +268,41 @@ export default function App() {
   }, [domain]);
 
   useEffect(() => {
+    let cancelled = false;
+    setOnboardingMessage("读取中");
+    getOnboardingProfileRepository()
+      .then((repository) => repository.getByDomain(domain))
+      .then((profile) => {
+        if (cancelled) {
+          return;
+        }
+        setOnboardingProfile(profile);
+        setOnboardingGoal(profile?.goal ?? "");
+        setOnboardingInterests(profile?.interests.join("\n") ?? "");
+        setOnboardingBackground(profile?.background ?? "");
+        setOnboardingMessage(profile ? "已读取" : "未建档");
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setOnboardingMessage(
+            error instanceof Error ? error.message : "读取建档失败",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [domain]);
+
+  useEffect(() => {
     const snapshot = domainSnapshot;
     if (!snapshot) {
       setFeedRecommendationView(null);
       return;
     }
     const snapshotForFeed: DomainLearningSnapshot = snapshot;
+    const onboarding = buildOnboardingSeedProfileFromProfile(onboardingProfile);
 
     let cancelled = false;
     setFeedMessage("生成推荐中");
@@ -273,6 +316,7 @@ export default function App() {
       const view = buildFeedRecommendationView({
         snapshot: snapshotForFeed,
         weights,
+        onboarding,
       });
 
       if (cancelled) {
@@ -310,7 +354,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [domainSnapshot]);
+  }, [domainSnapshot, onboardingProfile]);
 
   async function saveKey() {
     setIsKeyBusy(true);
@@ -362,6 +406,50 @@ export default function App() {
       setApiKeyMessage(error instanceof Error ? error.message : "读取失败");
     } finally {
       setIsKeyBusy(false);
+    }
+  }
+
+  async function saveOnboardingProfile() {
+    const goal = onboardingGoal.trim();
+    const interests = splitOnboardingInterestsInput(onboardingInterests);
+    const background = onboardingBackground.trim() || null;
+
+    if (!goal && interests.length === 0 && !background) {
+      setOnboardingMessage("至少填写一项");
+      return;
+    }
+
+    setIsOnboardingSaving(true);
+    setOnboardingMessage("保存中");
+    try {
+      const repository = await getOnboardingProfileRepository();
+      const profile = await repository.upsert({
+        domain,
+        goal,
+        interests,
+        background,
+        updatedAt: new Date().toISOString(),
+      });
+      setOnboardingProfile(profile);
+      setOnboardingGoal(profile.goal);
+      setOnboardingInterests(profile.interests.join("\n"));
+      setOnboardingBackground(profile.background ?? "");
+
+      const service = await createRuntimeLearningService();
+      const result = await service.recordSelfReport({
+        domain,
+        statement: onboardingProfileToStatement(profile),
+        dimensionHints: [...ONBOARDING_DIMENSION_HINTS],
+        confidenceScore: 0.85,
+      });
+      setLastEvidence(result.evidence);
+      setLastResult(result);
+      setOnboardingMessage("已保存");
+      await refreshLoopStatus(domain);
+    } catch (error) {
+      setOnboardingMessage(error instanceof Error ? error.message : "保存建档失败");
+    } finally {
+      setIsOnboardingSaving(false);
     }
   }
 
@@ -842,6 +930,45 @@ export default function App() {
               </button>
             </div>
             <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyMessage}</div>
+          </div>
+
+          <div className="mt-5 text-sm font-medium">冷启动</div>
+          <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
+            <label className="block text-xs font-medium text-[var(--color-muted)]">
+              目标
+              <input
+                className="mt-2 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                onChange={(event) => setOnboardingGoal(event.target.value)}
+                value={onboardingGoal}
+              />
+            </label>
+            <label className="mt-3 block text-xs font-medium text-[var(--color-muted)]">
+              兴趣方向
+              <textarea
+                className="mt-2 min-h-20 w-full resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                onChange={(event) => setOnboardingInterests(event.target.value)}
+                value={onboardingInterests}
+              />
+            </label>
+            <label className="mt-3 block text-xs font-medium text-[var(--color-muted)]">
+              背景
+              <textarea
+                className="mt-2 min-h-16 w-full resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+                onChange={(event) => setOnboardingBackground(event.target.value)}
+                value={onboardingBackground}
+              />
+            </label>
+            <button
+              className="mt-3 w-full rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              disabled={isOnboardingSaving}
+              onClick={saveOnboardingProfile}
+              type="button"
+            >
+              {isOnboardingSaving ? "保存中" : "保存建档"}
+            </button>
+            <div className="mt-3 text-sm text-[var(--color-muted)]">
+              {onboardingMessage}
+            </div>
           </div>
 
           <div className="mt-5 text-sm font-medium">状态</div>
