@@ -1,9 +1,16 @@
+import { useState } from "react";
 import type { LearningLoopStatus } from "@/features/events";
 import {
   buildPortraitDimensionTrendItems,
   buildPortraitDimensionVisualItems,
+  type PortraitDimensionVisualItem,
   type PortraitTimelineItem,
 } from "./index";
+
+export interface PortraitRevisionRequest {
+  dimension: PortraitDimensionVisualItem;
+  request: string;
+}
 
 export interface PortraitStatusPanelProps {
   status: LearningLoopStatus | null;
@@ -11,6 +18,9 @@ export interface PortraitStatusPanelProps {
   isLoading: boolean;
   message: string;
   onRefresh: () => void;
+  onRequestRevision: (request: PortraitRevisionRequest) => void;
+  revisionBusy: boolean;
+  revisionMessage: string;
 }
 
 const TRIGGER_REASON_LABELS: Record<string, string> = {
@@ -53,12 +63,33 @@ export function PortraitStatusPanel({
   isLoading,
   message,
   onRefresh,
+  onRequestRevision,
+  revisionBusy,
+  revisionMessage,
 }: PortraitStatusPanelProps) {
+  const [selectedDimensionKey, setSelectedDimensionKey] = useState("");
+  const [revisionRequest, setRevisionRequest] = useState("");
   const dimensions = buildPortraitDimensionVisualItems(
     status?.latest?.portrait ?? null,
     { limit: 6 },
   );
   const trends = buildPortraitDimensionTrendItems(timeline, { limit: 4 });
+  const selectedDimension =
+    dimensions.find((item) => item.key === selectedDimensionKey) ??
+    dimensions[0] ??
+    null;
+  const selectedKey = selectedDimension?.key ?? "";
+
+  function submitRevisionRequest() {
+    if (!selectedDimension || !revisionRequest.trim()) {
+      return;
+    }
+    onRequestRevision({
+      dimension: selectedDimension,
+      request: revisionRequest,
+    });
+    setRevisionRequest("");
+  }
 
   return (
     <>
@@ -109,6 +140,41 @@ export function PortraitStatusPanel({
             </div>
           ))
         )}
+      </div>
+
+      <div className="mt-5 text-sm font-medium">协商修改</div>
+      <div className="mt-3 rounded-md border border-[var(--color-border)] p-3 text-sm text-[var(--color-muted)]">
+        <select
+          className="w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+          disabled={dimensions.length === 0 || revisionBusy}
+          onChange={(event) => setSelectedDimensionKey(event.target.value)}
+          value={selectedKey}
+        >
+          {dimensions.length === 0 ? (
+            <option value="">暂无维度</option>
+          ) : (
+            dimensions.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
+              </option>
+            ))
+          )}
+        </select>
+        <textarea
+          className="mt-3 min-h-20 w-full resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
+          disabled={!selectedDimension || revisionBusy}
+          onChange={(event) => setRevisionRequest(event.target.value)}
+          value={revisionRequest}
+        />
+        <button
+          className="mt-3 w-full rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+          disabled={!selectedDimension || !revisionRequest.trim() || revisionBusy}
+          onClick={submitRevisionRequest}
+          type="button"
+        >
+          {revisionBusy ? "提交中" : "提交协商"}
+        </button>
+        <div className="mt-3 text-xs leading-5">{revisionMessage}</div>
       </div>
 
       <div className="mt-5 text-sm font-medium">版本趋势</div>

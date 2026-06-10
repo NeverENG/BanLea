@@ -42,8 +42,14 @@ import {
   ONBOARDING_DIMENSION_HINTS,
   splitOnboardingInterestsInput,
 } from "@/features/onboarding";
-import type { PortraitTimelineItem } from "@/features/portrait";
-import { PortraitStatusPanel } from "@/features/portrait/PortraitStatusPanel";
+import {
+  recordPortraitRevisionRequest,
+  type PortraitTimelineItem,
+} from "@/features/portrait";
+import {
+  PortraitStatusPanel,
+  type PortraitRevisionRequest,
+} from "@/features/portrait/PortraitStatusPanel";
 import { saveTutorTurnMessages } from "@/features/history";
 import {
   addTutorResourceSuggestions,
@@ -189,6 +195,9 @@ export default function App() {
   const [feedRecommendationView, setFeedRecommendationView] =
     useState<FeedRecommendationViewModel | null>(null);
   const [feedMessage, setFeedMessage] = useState("未反馈");
+  const [portraitRevisionMessage, setPortraitRevisionMessage] =
+    useState("未提交");
+  const [isPortraitRevisionSaving, setIsPortraitRevisionSaving] = useState(false);
   const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
   const [isCheckSaving, setIsCheckSaving] = useState(false);
 
@@ -636,6 +645,33 @@ export default function App() {
     }
   }
 
+  async function requestPortraitRevision(request: PortraitRevisionRequest) {
+    setIsPortraitRevisionSaving(true);
+    setPortraitRevisionMessage("提交中");
+    try {
+      const service = await createRuntimeLearningService();
+      const result = await recordPortraitRevisionRequest({
+        input: {
+          domain,
+          dimension: request.dimension.key,
+          request: request.request,
+          currentSummary: request.dimension.summary,
+        },
+        learningEvents: service,
+      });
+      setLastEvidence(result.evidence);
+      setLastResult(result);
+      setPortraitRevisionMessage("已提交");
+      await refreshLoopStatus(domain);
+    } catch (error) {
+      setPortraitRevisionMessage(
+        error instanceof Error ? error.message : "提交协商失败",
+      );
+    } finally {
+      setIsPortraitRevisionSaving(false);
+    }
+  }
+
   async function recordEvent() {
     setIsSaving(true);
     setStatus("写入中");
@@ -1028,6 +1064,9 @@ export default function App() {
             isLoading={isLoopStatusLoading}
             message={loopStatusMessage}
             onRefresh={() => refreshLoopStatus()}
+            onRequestRevision={requestPortraitRevision}
+            revisionBusy={isPortraitRevisionSaving}
+            revisionMessage={portraitRevisionMessage}
             status={loopStatus}
             timeline={portraitTimeline}
           />
