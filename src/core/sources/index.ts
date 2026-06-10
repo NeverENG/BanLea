@@ -125,3 +125,5 @@ export function createStaticResourceSource({
     },
   };
 }
+
+export * from "./github";
