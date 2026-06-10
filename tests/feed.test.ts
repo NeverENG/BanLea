@@ -235,6 +235,33 @@ describe("buildFeedRecommendationView", () => {
     expect(view.emptyReason).toBeNull();
   });
 
+  it("uses self-report evidence as cold-start onboarding seeds", () => {
+    const view = buildFeedRecommendationView({
+      snapshot: snapshot({
+        evidenceTimeline: [
+          {
+            id: 21,
+            type: "self_report",
+            summary: "用户自评：想学 k8s 实战",
+            payload: {
+              statement: "想学 k8s 实战",
+              confidenceScore: 0.85,
+              dimensionHints: ["goal_orientation", "interest"],
+            },
+            createdAt: "2026-06-09T08:20:00.000Z",
+            consumedInVersion: null,
+            status: "pending",
+          },
+        ],
+      }),
+    });
+
+    expect(view.items[0].topic).toBe("想学 k8s 实战");
+    expect(view.items[0].reason).toBe("来自冷启动自评");
+    expect(view.sourceCounts.topicSeeds).toBe(1);
+    expect(view.emptyReason).toBeNull();
+  });
+
   it("ignores assistant messages and completed reading items", () => {
     const view = buildFeedRecommendationView({
       snapshot: snapshot({

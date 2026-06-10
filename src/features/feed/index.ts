@@ -9,6 +9,7 @@ import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
 import type { RecommendationRepository } from "@/db/recommendationRepo";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
 import type { LearningEventResult, LearningEventService } from "@/features/events";
+import { buildOnboardingSeedProfileFromEvidence } from "@/features/onboarding";
 import type { Recommendation } from "@/types/recommendation";
 
 export interface FeedRecommendationItem {
@@ -165,7 +166,9 @@ export function buildFeedRecommendationView({
   recentMessageLimit = 3,
   weights,
 }: BuildFeedRecommendationViewOptions): FeedRecommendationViewModel {
+  const onboarding = buildOnboardingSeedProfileFromEvidence(snapshot.evidenceTimeline);
   const topicSeeds = [
+    ...onboarding.topicSeeds,
     ...portraitTopicSeeds(snapshot),
     ...recentUserTopicSeeds(snapshot, recentMessageLimit),
   ];

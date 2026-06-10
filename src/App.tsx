@@ -35,6 +35,7 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
+import { ONBOARDING_DIMENSION_HINTS } from "@/features/onboarding";
 import type { PortraitTimelineItem } from "@/features/portrait";
 import { PortraitStatusPanel } from "@/features/portrait/PortraitStatusPanel";
 import { saveTutorTurnMessages } from "@/features/history";
@@ -564,6 +565,7 @@ export default function App() {
           result = await service.recordSelfReport({
             domain: domain === "global" ? "global" : domain,
             statement: content,
+            dimensionHints: [...ONBOARDING_DIMENSION_HINTS],
             confidenceScore: score,
           });
           break;

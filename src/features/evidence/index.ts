@@ -11,6 +11,7 @@ export interface EvidenceTimelineItem {
   id: number | null;
   type: EvidenceType;
   summary: string;
+  payload: Evidence["payload"];
   createdAt: string;
   consumedInVersion: number | null;
   status: "pending" | "consumed";
@@ -21,6 +22,7 @@ function toTimelineItem(evidence: Evidence): EvidenceTimelineItem {
     id: evidence.id ?? null,
     type: evidence.type,
     summary: evidence.summary,
+    payload: evidence.payload,
     createdAt: evidence.createdAt,
     consumedInVersion: evidence.consumedInVersion,
     status: evidence.consumedInVersion === null ? "pending" : "consumed",
