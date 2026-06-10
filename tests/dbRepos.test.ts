@@ -466,6 +466,48 @@ describe("recommendationRepository", () => {
     expect(db.executeCalls[2].query).toContain("skipped = 1");
     expect(db.executeCalls[2].bindValues).toEqual([51]);
   });
+
+  it("upsertCandidate 已存在时更新候选字段并保留反馈状态", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }], [
+      [
+        {
+          id: 51,
+          domain_id: "computer_science",
+          kind: "learn",
+          topic: "k8s networking",
+          reason: "old reason",
+          features_json: JSON.stringify({ novelty: 0.2 }),
+          score: 0.5,
+          shown_at: "2026-06-09T10:00:00.000Z",
+          clicked: 1,
+          dwell_seconds: 90,
+          skipped: 0,
+        },
+      ],
+    ]);
+
+    const saved = await createRecommendationRepository(db).upsertCandidate(
+      newRecommendation({
+        reason: "new reason",
+        features: { interest_match: 0.9 },
+        score: 2,
+      }),
+    );
+
+    expect(saved.id).toBe(51);
+    expect(saved.reason).toBe("new reason");
+    expect(saved.features).toEqual({ interest_match: 0.9 });
+    expect(saved.clicked).toBe(true);
+    expect(saved.dwellSeconds).toBe(90);
+    expect(db.selectCalls[0].query).toContain("kind = $2 AND topic = $3");
+    expect(db.executeCalls[0].query).toContain("UPDATE recommendations");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      51,
+      "new reason",
+      JSON.stringify({ interest_match: 0.9 }),
+      2,
+    ]);
+  });
 });
 
 describe("tutorSessionRepository", () => {

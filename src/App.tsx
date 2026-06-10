@@ -3,6 +3,7 @@ import {
   getEvidenceRepository,
   getPortraitRepository,
   getRankerWeightRepository,
+  getRecommendationRepository,
   getReadingListRepository,
   getTutorSessionRepository,
 } from "@/db";
@@ -23,9 +24,11 @@ import {
 } from "@/features/events";
 import {
   buildFeedRecommendationView,
+  persistFeedRecommendationView,
   recordFeedRecommendationFeedback,
   type FeedRecommendationFeedbackKind,
   type FeedRecommendationItem,
+  type FeedRecommendationViewModel,
 } from "@/features/feed";
 import { FeedWorkspaceView } from "@/features/feed/FeedWorkspaceView";
 import {
@@ -168,6 +171,8 @@ export default function App() {
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
   const [feedBusyId, setFeedBusyId] = useState<string | null>(null);
+  const [feedRecommendationView, setFeedRecommendationView] =
+    useState<FeedRecommendationViewModel | null>(null);
   const [feedMessage, setFeedMessage] = useState("未反馈");
   const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
   const [isCheckSaving, setIsCheckSaving] = useState(false);
@@ -177,16 +182,6 @@ export default function App() {
   const selectedLabel = useMemo(
     () => EVENT_OPTIONS.find((option) => option.kind === kind)?.label ?? kind,
     [kind],
-  );
-
-  const feedRecommendationView = useMemo(
-    () =>
-      domainSnapshot
-        ? buildFeedRecommendationView({
-            snapshot: domainSnapshot,
-          })
-        : null,
-    [domainSnapshot],
   );
 
   function applyDomainLearningSnapshot(snapshot: DomainLearningSnapshot) {
@@ -256,6 +251,53 @@ export default function App() {
       cancelled = true;
     };
   }, [domain]);
+
+  useEffect(() => {
+    if (!domainSnapshot) {
+      setFeedRecommendationView(null);
+      return;
+    }
+
+    let cancelled = false;
+    const view = buildFeedRecommendationView({
+      snapshot: domainSnapshot,
+    });
+    setFeedRecommendationView(view);
+
+    if (view.items.length === 0) {
+      setFeedMessage(view.emptyReason ?? "暂无可同步推荐");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setFeedMessage("同步推荐候选中");
+    getRecommendationRepository()
+      .then((repository) =>
+        persistFeedRecommendationView({
+          domain: domainSnapshot.status.domain,
+          view,
+          repository,
+        }),
+      )
+      .then((persisted) => {
+        if (!cancelled) {
+          setFeedRecommendationView(persisted);
+          setFeedMessage("推荐候选已同步");
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setFeedMessage(
+            error instanceof Error ? error.message : "推荐候选同步失败",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [domainSnapshot]);
 
   async function saveKey() {
     setIsKeyBusy(true);

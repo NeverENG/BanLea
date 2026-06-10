@@ -5,12 +5,14 @@ import {
   type RecommendationTopicSeed,
 } from "@/core/recommender";
 import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
+import type { RecommendationRepository } from "@/db/recommendationRepo";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
 import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { Recommendation } from "@/types/recommendation";
 
 export interface FeedRecommendationItem {
   id: string;
+  recommendationId: number | null;
   kind: Recommendation["kind"];
   topic: string;
   reason: string;
@@ -31,6 +33,13 @@ export interface BuildFeedRecommendationViewOptions {
   snapshot: DomainLearningSnapshot;
   limit?: number;
   recentMessageLimit?: number;
+}
+
+export interface PersistFeedRecommendationViewOptions {
+  domain: string;
+  view: FeedRecommendationViewModel;
+  repository: Pick<RecommendationRepository, "markShown" | "upsertCandidate">;
+  now?: () => string;
 }
 
 export type FeedRecommendationFeedbackKind = "click" | "skip";
@@ -124,6 +133,7 @@ function readingSeeds(snapshot: DomainLearningSnapshot): RecommendationReadingSe
 function toFeedItem(candidate: Recommendation, index: number): FeedRecommendationItem {
   return {
     id: `${candidate.kind}-${compactIdPart(candidate.topic) || index}`,
+    recommendationId: candidate.id ?? null,
     kind: candidate.kind,
     topic: candidate.topic,
     reason: candidate.reason ?? "基于当前学习状态生成",
@@ -203,11 +213,13 @@ export async function recordFeedRecommendationFeedback({
       ? await learningEvents.recordRecommendationClick({
           domain,
           topic: item.topic,
+          recommendationId: item.recommendationId ?? undefined,
           dwellSeconds,
         })
       : await learningEvents.recordRecommendationSkip({
           domain,
           topic: item.topic,
+          recommendationId: item.recommendationId ?? undefined,
         });
 
   await rankerWeights.upsertMany(weights, updatedAt);
@@ -216,5 +228,40 @@ export async function recordFeedRecommendationFeedback({
     learning,
     weights,
     updatedAt,
+  };
+}
+
+export async function persistFeedRecommendationView({
+  domain,
+  view,
+  repository,
+  now = defaultNow,
+}: PersistFeedRecommendationViewOptions): Promise<FeedRecommendationViewModel> {
+  const shownAt = now();
+  const items = await Promise.all(
+    view.items.map(async (item) => {
+      const saved = await repository.upsertCandidate({
+        domain,
+        kind: item.kind,
+        topic: item.topic,
+        reason: item.reason,
+        features: item.features,
+        score: item.score,
+      });
+
+      if (typeof saved.id === "number") {
+        await repository.markShown(saved.id, shownAt);
+      }
+
+      return {
+        ...item,
+        recommendationId: saved.id ?? null,
+      };
+    }),
+  );
+
+  return {
+    ...view,
+    items,
   };
 }

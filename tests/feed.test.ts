@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildFeedRecommendationView,
+  persistFeedRecommendationView,
   recordFeedRecommendationFeedback,
   type FeedRecommendationItem,
 } from "@/features/feed";
 import type { DomainLearningSnapshot } from "@/features/dashboard";
 import type { LearningEventResult } from "@/features/events";
 import type { RankerWeightRepository } from "@/db/rankerWeightRepo";
+import type { RecommendationRepository } from "@/db/recommendationRepo";
 
 function snapshot(
   overrides: Partial<DomainLearningSnapshot> = {},
@@ -82,6 +84,7 @@ function snapshot(
 function feedItem(overrides: Partial<FeedRecommendationItem> = {}): FeedRecommendationItem {
   return {
     id: "learn-k8s",
+    recommendationId: 12,
     kind: "learn",
     topic: "k8s",
     reason: "test",
@@ -91,6 +94,23 @@ function feedItem(overrides: Partial<FeedRecommendationItem> = {}): FeedRecommen
       novelty: 0.5,
     },
     ...overrides,
+  };
+}
+
+function recommendationRepository(): Pick<
+  RecommendationRepository,
+  "markShown" | "upsertCandidate"
+> {
+  return {
+    markShown: vi.fn(async () => undefined),
+    upsertCandidate: vi.fn(async (input) => ({
+      ...input,
+      id: 12,
+      shownAt: null,
+      clicked: false,
+      dwellSeconds: 0,
+      skipped: false,
+    })),
   };
 }
 
@@ -318,6 +338,7 @@ describe("recordFeedRecommendationFeedback", () => {
     expect(learningEvents.recordRecommendationClick).toHaveBeenCalledWith({
       domain: "computer_science",
       topic: "k8s",
+      recommendationId: 12,
       dwellSeconds: 120,
     });
     expect(learningEvents.recordRecommendationSkip).not.toHaveBeenCalled();
@@ -353,8 +374,54 @@ describe("recordFeedRecommendationFeedback", () => {
     expect(learningEvents.recordRecommendationSkip).toHaveBeenCalledWith({
       domain: "computer_science",
       topic: "k8s",
+      recommendationId: 12,
     });
     expect(learningEvents.recordRecommendationClick).not.toHaveBeenCalled();
     expect(feedback.weights.interest_match).toBeLessThan(1.4);
+  });
+});
+
+describe("persistFeedRecommendationView", () => {
+  it("persists feed items and attaches recommendation ids", async () => {
+    const repository = recommendationRepository();
+    const view = {
+      items: [
+        feedItem({
+          recommendationId: null,
+          kind: "read",
+          topic: "K8s intro",
+          score: 1.1,
+        }),
+      ],
+      sourceCounts: {
+        topicSeeds: 0,
+        readingSeeds: 1,
+      },
+      emptyReason: null,
+    };
+
+    const persisted = await persistFeedRecommendationView({
+      domain: "computer_science",
+      view,
+      repository,
+      now: () => "2026-06-09T09:00:00.000Z",
+    });
+
+    expect(repository.upsertCandidate).toHaveBeenCalledWith({
+      domain: "computer_science",
+      kind: "read",
+      topic: "K8s intro",
+      reason: "test",
+      features: {
+        interest_match: 1,
+        novelty: 0.5,
+      },
+      score: 1.1,
+    });
+    expect(repository.markShown).toHaveBeenCalledWith(
+      12,
+      "2026-06-09T09:00:00.000Z",
+    );
+    expect(persisted.items[0].recommendationId).toBe(12);
   });
 });

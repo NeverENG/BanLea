@@ -23,7 +23,13 @@ interface RecommendationRow {
 
 export interface RecommendationRepository {
   insert(input: NewRecommendation): Promise<Recommendation>;
+  getByDomainKindTopic(
+    domain: string,
+    kind: RecommendationKind,
+    topic: string,
+  ): Promise<Recommendation | null>;
   listByDomain(domain: string, limit?: number): Promise<Recommendation[]>;
+  upsertCandidate(input: NewRecommendation): Promise<Recommendation>;
   markShown(id: number, shownAt: string): Promise<void>;
   markClicked(id: number, dwellSeconds: number): Promise<void>;
   markSkipped(id: number): Promise<void>;
@@ -100,6 +106,55 @@ export function createRecommendationRepository(
         hasLimit ? [domain, limit] : [domain],
       );
       return rows.map(parseRecommendationRow);
+    },
+
+    async getByDomainKindTopic(domain, kind, topic) {
+      const rows = await db.select<RecommendationRow[]>(
+        `SELECT id, domain_id, kind, topic, reason, features_json, score, shown_at, clicked, dwell_seconds, skipped
+           FROM recommendations
+          WHERE domain_id = $1 AND kind = $2 AND topic = $3
+          ORDER BY id DESC
+          LIMIT 1`,
+        [domain, kind, topic],
+      );
+      return rows[0] ? parseRecommendationRow(rows[0]) : null;
+    },
+
+    async upsertCandidate(input) {
+      const recommendation = newRecommendationSchema.parse(input);
+      const existing = await this.getByDomainKindTopic(
+        recommendation.domain,
+        recommendation.kind,
+        recommendation.topic,
+      );
+
+      if (!existing?.id) {
+        return this.insert(recommendation);
+      }
+
+      await db.execute(
+        `UPDATE recommendations
+            SET reason = $2,
+                features_json = $3,
+                score = $4
+          WHERE id = $1`,
+        [
+          existing.id,
+          recommendation.reason ?? null,
+          JSON.stringify(recommendation.features),
+          recommendation.score,
+        ],
+      );
+
+      return {
+        ...existing,
+        ...recommendation,
+        id: existing.id,
+        shownAt: existing.shownAt,
+        clicked: existing.clicked,
+        dwellSeconds: existing.dwellSeconds,
+        skipped: existing.skipped,
+      };
     },
 
     async markShown(id, shownAt) {
