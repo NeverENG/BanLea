@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createGitHubResourceSource, type ResourceSourceId } from "@/core/sources";
+import { createGitHubResourceSource } from "@/core/sources";
 import {
   getEvidenceRepository,
   getOnboardingProfileRepository,
@@ -10,12 +10,10 @@ import {
   getTutorSessionRepository,
 } from "@/db";
 import type { EvidenceTimelineItem } from "@/features/evidence";
-import { EvidenceStatusPanel } from "@/features/evidence/EvidenceStatusPanel";
 import {
   type DomainLearningSnapshot,
   type LearningDashboardSummary,
 } from "@/features/dashboard";
-import { DashboardSummaryPanel } from "@/features/dashboard/DashboardSummaryPanel";
 import { DashboardWorkspaceView } from "@/features/dashboard/DashboardWorkspaceView";
 import { loadRuntimeDomainLearningSnapshot } from "@/features/dashboard/runtimeSnapshot";
 import {
@@ -37,7 +35,6 @@ import {
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
-import { ResourceSourceSettingsPanel } from "@/features/settings/ResourceSourceSettingsPanel";
 import {
   createResourceSourceSettingsService,
   enabledResourceSourceIds,
@@ -65,7 +62,6 @@ import {
   type ReadingListSummary,
   type ReadingListViewItem,
 } from "@/features/reading-list";
-import { ReadingListPanel } from "@/features/reading-list/ReadingListPanel";
 import { ReadingListWorkspaceView } from "@/features/reading-list/ReadingListWorkspaceView";
 import {
   createLocalTutorCheckQuestion,
@@ -84,38 +80,40 @@ import type {
 import type { ReadingListStatus } from "@/types/readingList";
 import type { OnboardingProfile } from "@/types/onboarding";
 
-type EventKind = "chat" | "self_report" | "quiz" | "reading" | "reco_click" | "reco_skip";
-type WorkspaceView = "tutor" | "dashboard" | "portrait" | "profile";
-type LearningMode = "tutor" | "reading" | "feed";
+type WorkspaceView = "tutor" | "resources" | "dashboard" | "portrait" | "profile";
+type ResourceMode = "reading" | "feed";
+type ThemeMode = "light" | "dark";
 
-const EVENT_OPTIONS: { kind: EventKind; label: string }[] = [
-  { kind: "chat", label: "对话" },
-  { kind: "self_report", label: "自评" },
-  { kind: "quiz", label: "测验" },
-  { kind: "reading", label: "阅读" },
-  { kind: "reco_click", label: "点击" },
-  { kind: "reco_skip", label: "跳过" },
+const THEME_STORAGE_KEY = "banlea-theme";
+
+const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string; glyph: string }[] = [
+  { view: "tutor", label: "学习", glyph: "学" },
+  { view: "resources", label: "资料", glyph: "册" },
+  { view: "dashboard", label: "数据", glyph: "迹" },
+  { view: "portrait", label: "画像", glyph: "象" },
+  { view: "profile", label: "我的", glyph: "吾" },
 ];
 
-const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string }[] = [
-  { view: "tutor", label: "学习台" },
-  { view: "dashboard", label: "数据看板" },
-  { view: "portrait", label: "我的画像" },
-  { view: "profile", label: "关于我" },
-];
-
-const LEARNING_MODE_OPTIONS: { mode: LearningMode; label: string }[] = [
-  { mode: "tutor", label: "辅导" },
+const RESOURCE_MODE_OPTIONS: { mode: ResourceMode; label: string }[] = [
   { mode: "reading", label: "书单" },
   { mode: "feed", label: "推荐" },
 ];
 
+const DOMAIN_OPTIONS: { value: string; label: string }[] = [
+  { value: "computer_science", label: "计算机" },
+  { value: "physics", label: "物理" },
+  { value: "global", label: "全部" },
+];
+
 const WORKSPACE_VIEW_META: Record<WorkspaceView, { eyebrow: string; title: string }> = {
-  tutor: { eyebrow: "Personal learning cockpit", title: "学习台" },
-  dashboard: { eyebrow: "Learning analytics", title: "数据看板" },
-  portrait: { eyebrow: "Learner model", title: "我的画像" },
-  profile: { eyebrow: "Profile & settings", title: "关于我" },
+  tutor: { eyebrow: "伴学对话", title: "学习" },
+  resources: { eyebrow: "书阁与推荐", title: "资料" },
+  dashboard: { eyebrow: "学迹纵览", title: "数据" },
+  portrait: { eyebrow: "学习画像", title: "画像" },
+  profile: { eyebrow: "个人设置", title: "我的" },
 };
+
+const FEED_CLICK_DWELL_SECONDS = 60;
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
   total: 0,
@@ -156,6 +154,27 @@ function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
 }
 
+function domainLabel(domain: string): string {
+  return DOMAIN_OPTIONS.find((item) => item.value === domain)?.label ?? domain;
+}
+
+function readInitialTheme(): ThemeMode {
+  if (typeof window === "undefined") {
+    return "light";
+  }
+  try {
+    const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+    ? "dark"
+    : "light";
+}
+
 function friendlyErrorMessage(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : fallback;
   return message.includes("Cannot read properties of undefined") &&
@@ -177,20 +196,16 @@ async function runLiveHarnessUpdate(
 }
 
 export default function App() {
+  const [theme, setTheme] = useState<ThemeMode>(readInitialTheme);
   const [domain, setDomain] = useState("computer_science");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("tutor");
-  const [learningMode, setLearningMode] = useState<LearningMode>("tutor");
-  const [kind, setKind] = useState<EventKind>("chat");
-  const [content, setContent] = useState("帮我入门 k8s");
+  const [resourceMode, setResourceMode] = useState<ResourceMode>("reading");
   const [tutorInput, setTutorInput] = useState("帮我入门 k8s");
   const [tutorMessages, setTutorMessages] = useState<TutorMessage[]>([]);
   const [tutorSessionId, setTutorSessionId] = useState<number | null>(null);
-  const [score, setScore] = useState(0.6);
-  const [dwellSeconds, setDwellSeconds] = useState(60);
   const [lastEvidence, setLastEvidence] = useState<Evidence | null>(null);
   const [lastResult, setLastResult] = useState<LearningEventResult | null>(null);
   const [status, setStatus] = useState("等待记录");
-  const [isSaving, setIsSaving] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({
     configured: false,
@@ -202,8 +217,6 @@ export default function App() {
   const [resourceSourceStatuses, setResourceSourceStatuses] = useState<
     ResourceSourceRuntimeStatus[]
   >([]);
-  const [resourceSourceMessage, setResourceSourceMessage] = useState("未读取");
-  const [isResourceSourceBusy, setIsResourceSourceBusy] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [onboardingGoal, setOnboardingGoal] = useState("");
   const [onboardingInterests, setOnboardingInterests] = useState("");
@@ -246,11 +259,6 @@ export default function App() {
     [],
   );
 
-  const selectedLabel = useMemo(
-    () => EVENT_OPTIONS.find((option) => option.kind === kind)?.label ?? kind,
-    [kind],
-  );
-
   function applyDomainLearningSnapshot(snapshot: DomainLearningSnapshot) {
     setDomainSnapshot(snapshot);
     setLoopStatus(snapshot.status);
@@ -263,6 +271,15 @@ export default function App() {
     setTutorMessages(snapshot.tutorHistory.messages);
     setTutorSessionId(snapshot.tutorHistory.session?.id ?? null);
   }
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // ignore storage errors
+    }
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -296,27 +313,14 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    setIsResourceSourceBusy(true);
     resourceSourceSettingsService
       .loadStatus()
       .then((statuses) => {
         if (!cancelled) {
           setResourceSourceStatuses(statuses);
-          setResourceSourceMessage(
-            `可用源：${enabledResourceSourceIds(statuses).length}`,
-          );
         }
       })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setResourceSourceMessage(friendlyErrorMessage(error, "读取失败"));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsResourceSourceBusy(false);
-        }
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -484,44 +488,6 @@ export default function App() {
       setApiKeyMessage(friendlyErrorMessage(error, "读取失败"));
     } finally {
       setIsKeyBusy(false);
-    }
-  }
-
-  async function refreshResourceSources() {
-    setIsResourceSourceBusy(true);
-    setResourceSourceMessage("读取中");
-    try {
-      const statuses = await resourceSourceSettingsService.loadStatus();
-      setResourceSourceStatuses(statuses);
-      setResourceSourceMessage(
-        `可用源：${enabledResourceSourceIds(statuses).length}`,
-      );
-    } catch (error) {
-      setResourceSourceMessage(friendlyErrorMessage(error, "读取失败"));
-    } finally {
-      setIsResourceSourceBusy(false);
-    }
-  }
-
-  async function toggleResourceSource(
-    sourceId: ResourceSourceId,
-    enabled: boolean,
-  ) {
-    setIsResourceSourceBusy(true);
-    setResourceSourceMessage("保存中");
-    try {
-      const statuses = await resourceSourceSettingsService.setEnabled(
-        sourceId,
-        enabled,
-      );
-      setResourceSourceStatuses(statuses);
-      setResourceSourceMessage(
-        `可用源：${enabledResourceSourceIds(statuses).length}`,
-      );
-    } catch (error) {
-      setResourceSourceMessage(friendlyErrorMessage(error, "保存失败"));
-    } finally {
-      setIsResourceSourceBusy(false);
     }
   }
 
@@ -745,7 +711,8 @@ export default function App() {
         learningEvents,
         rankerWeights,
         recommendations,
-        dwellSeconds: feedbackKind === "click" ? dwellSeconds : undefined,
+        dwellSeconds:
+          feedbackKind === "click" ? FEED_CLICK_DWELL_SECONDS : undefined,
       });
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
@@ -785,500 +752,270 @@ export default function App() {
     }
   }
 
-  async function recordEvent() {
-    setIsSaving(true);
-    setStatus("写入中");
-    try {
-      const service = await createRuntimeLearningService();
-      let result: LearningEventResult;
-
-      switch (kind) {
-        case "chat":
-          result = await service.recordChat({
-            domain,
-            role: "user",
-            content,
-          });
-          break;
-        case "self_report":
-          result = await service.recordSelfReport({
-            domain: domain === "global" ? "global" : domain,
-            statement: content,
-            dimensionHints: [...ONBOARDING_DIMENSION_HINTS],
-            confidenceScore: score,
-          });
-          break;
-        case "quiz":
-          result = await service.recordQuiz({
-            domain,
-            topic: content,
-            score,
-          });
-          break;
-        case "reading":
-          result = await service.recordReading({
-            domain,
-            title: content,
-            status: "done",
-            dwellSeconds,
-          });
-          break;
-        case "reco_click":
-          result = await service.recordRecommendationClick({
-            domain,
-            topic: content,
-            dwellSeconds,
-          });
-          break;
-        case "reco_skip":
-          result = await service.recordRecommendationSkip({
-            domain,
-            topic: content,
-          });
-          break;
-      }
-
-      setLastEvidence(result.evidence);
-      setLastResult(result);
-      setStatus("已写入 evidence");
-      await refreshLoopStatus(domain);
-    } catch (error) {
-      setStatus(friendlyErrorMessage(error, "写入失败"));
-    } finally {
-      setIsSaving(false);
-    }
-  }
+  const viewMeta = WORKSPACE_VIEW_META[workspaceView];
 
   return (
-    <div className="min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)]">
-      <main className="min-h-screen p-3 sm:p-5">
-        <section className="mx-auto flex h-[calc(100vh-1.5rem)] max-w-7xl flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[0_24px_80px_rgba(35,56,45,0.12)] sm:h-[calc(100vh-2.5rem)]">
-          <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 sm:px-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] text-lg font-semibold text-white">
-                    B
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-lg font-semibold tracking-tight">BanLea</div>
-                    <div className="mt-1 text-sm text-[var(--color-muted)]">
-                      {WORKSPACE_VIEW_META[workspaceView].eyebrow} · {domain}
+    <div className="flex h-[100dvh] overflow-hidden text-[var(--color-ink)]">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]/60 px-4 py-6 backdrop-blur md:flex">
+        <div className="flex items-center gap-3 px-1.5">
+          <span className="ink-seal h-10 w-10 text-lg">斑</span>
+          <div className="min-w-0">
+            <div className="ink-title text-lg leading-tight">BanLea</div>
+            <div className="mt-1 text-[11px] tracking-[0.42em] text-[var(--color-muted)]">
+              伴学
+            </div>
+          </div>
+        </div>
+
+        <nav className="mt-9 flex flex-col gap-1.5">
+          {WORKSPACE_VIEW_OPTIONS.map((option) => (
+            <button
+              className="ink-nav-item"
+              data-active={workspaceView === option.view}
+              key={option.view}
+              onClick={() => setWorkspaceView(option.view)}
+              type="button"
+            >
+              <span className="ink-nav-glyph">{option.glyph}</span>
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="mt-9 px-1.5">
+          <div className="ink-eyebrow">领域</div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {DOMAIN_OPTIONS.map((item) => (
+              <button
+                className={`rounded-full border px-3 py-1 text-xs transition ${
+                  domain === item.value
+                    ? "border-transparent bg-[var(--color-accent)] text-[var(--color-on-accent)]"
+                    : "border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
+                }`}
+                key={item.value}
+                onClick={() => setDomain(item.value)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-auto px-1.5 pt-6">
+          <hr className="ink-divider" />
+          <div className="mt-4 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isClaudeReady
+                    ? "bg-[var(--color-accent)]"
+                    : "bg-[var(--color-faint)]"
+                }`}
+              />
+              {isClaudeReady ? "Claude 已就绪" : "Claude 未连接"}
+            </span>
+            <button
+              aria-label="切换主题"
+              className="ink-nav-glyph cursor-pointer transition hover:text-[var(--color-ink)]"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              title={theme === "dark" ? "切换到宣纸" : "切换到夜墨"}
+              type="button"
+            >
+              {theme === "dark" ? "日" : "月"}
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <main className="flex h-full min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 px-4 py-3 backdrop-blur md:hidden">
+          <div className="flex items-center gap-2.5">
+            <span className="ink-seal h-8 w-8 text-sm">斑</span>
+            <span className="ink-title text-base">BanLea</span>
+          </div>
+          <button
+            aria-label="切换主题"
+            className="ink-nav-glyph cursor-pointer"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            type="button"
+          >
+            {theme === "dark" ? "日" : "月"}
+          </button>
+        </header>
+        <nav className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-[var(--color-border)] bg-[var(--color-surface)]/70 px-4 py-2 backdrop-blur md:hidden">
+          {WORKSPACE_VIEW_OPTIONS.map((option) => (
+            <button
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm transition ${
+                workspaceView === option.view
+                  ? "bg-[var(--color-ink-strong)] text-[var(--color-canvas)]"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+              }`}
+              key={option.view}
+              onClick={() => setWorkspaceView(option.view)}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </nav>
+
+        <header className="hidden shrink-0 items-end justify-between gap-4 px-8 pb-5 pt-7 md:flex">
+          <div>
+            <div className="ink-eyebrow">{viewMeta.eyebrow}</div>
+            <h1 className="ink-title mt-2 text-[1.7rem] leading-none">
+              {viewMeta.title}
+            </h1>
+          </div>
+          <span className="ink-chip">{domainLabel(domain)}</span>
+        </header>
+
+        <section className="min-h-0 flex-1 overflow-hidden">
+          {workspaceView === "tutor" ? (
+            <div className="mx-auto flex h-full w-full max-w-[860px] flex-col px-4 pb-4 sm:px-6 sm:pb-6">
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {tutorMessages.length === 0 ? (
+                  <div className="ink-fade-in flex min-h-full flex-col items-center justify-center pb-10 text-center">
+                    <svg aria-hidden="true" className="opacity-90" height="88" viewBox="0 0 100 100" width="88">
+                      <path d="M 79 31 A 35 35 0 1 0 84 57" fill="none" opacity="0.85" stroke="var(--color-ink-strong)" strokeLinecap="round" strokeWidth="5" />
+                      <path d="M 82 26 A 39 39 0 1 0 87 60" fill="none" opacity="0.45" stroke="var(--color-accent)" strokeLinecap="round" strokeWidth="1.5" />
+                    </svg>
+                    <h2 className="ink-title mt-7 text-3xl sm:text-4xl">今日，学些什么？</h2>
+                    <p className="mt-3 text-sm text-[var(--color-muted)]">一问一答之间，画像随你生长</p>
+                    <div className="mt-7 flex flex-wrap justify-center gap-2">
+                      <span className="ink-chip">书单 {readingListSummary.total}</span>
+                      <span className="ink-chip">画像 v{dashboardSummary.latestPortraitVersion ?? "—"}</span>
+                      <span className="ink-chip">{domainLabel(domain)}</span>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-4 py-5">
+                    {tutorMessages.map((message) => (
+                      <div
+                        className={`ink-fade-in whitespace-pre-wrap text-sm leading-7 ${
+                          message.role === "user" ? "ink-msg-user" : "ink-msg-assistant"
+                        }`}
+                        key={message.id}
+                      >
+                        {message.content}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-                <div className="flex rounded-md bg-[var(--color-soft)] p-1">
-                  {["computer_science", "physics", "global"].map((item) => (
+              <div className="shrink-0 pt-3">
+                {checkQuestion ? (
+                  <div className="ink-card mb-3 border-l-2 border-l-[var(--color-accent)] p-4 text-sm">
+                    <div className="ink-eyebrow">检验一下</div>
+                    <div className="mt-2 leading-6 text-[var(--color-ink)]">{checkQuestion.prompt}</div>
+                    <div className="mt-3 flex gap-2">
+                      <button className="ink-btn ink-btn-ghost" disabled={isCheckSaving} onClick={() => recordCheckResult(0.4)} type="button">未掌握</button>
+                      <button className="ink-btn ink-btn-seal" disabled={isCheckSaving} onClick={() => recordCheckResult(0.85)} type="button">已掌握</button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="ink-card flex flex-col gap-2 p-2.5 shadow-[var(--shadow-float)] sm:flex-row sm:items-end">
+                  <textarea
+                    className="min-h-14 flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-6 outline-none placeholder:text-[var(--color-faint)]"
+                    onChange={(event) => setTutorInput(event.target.value)}
+                    placeholder="例如：帮我入门 k8s"
+                    value={tutorInput}
+                  />
+                  <button className="ink-btn ink-btn-seal sm:w-24" disabled={isSending || !tutorInput.trim()} onClick={sendTutorMessage} type="button">
+                    {isSending ? "研墨中…" : "问"}
+                  </button>
+                </div>
+                <div className="mt-2 truncate px-1 text-xs text-[var(--color-faint)]">{status}</div>
+              </div>
+            </div>
+          ) : workspaceView === "resources" ? (
+            <div className="mx-auto flex h-full min-h-0 w-full max-w-[1280px] flex-col px-4 pb-4 sm:px-6 sm:pb-6">
+              <div className="flex shrink-0 items-center justify-between gap-3 py-3">
+                <div className="hidden text-sm text-[var(--color-muted)] sm:block">书单与推荐，随画像生长</div>
+                <div className="flex rounded-full border border-[var(--color-border)] bg-[var(--color-soft)] p-1">
+                  {RESOURCE_MODE_OPTIONS.map((option) => (
                     <button
-                      className={`rounded px-3 py-1.5 text-sm ${
-                        domain === item
-                          ? "bg-white text-[var(--color-ink)] shadow-sm"
+                      className={`rounded-full px-4 py-1.5 text-sm transition ${
+                        resourceMode === option.mode
+                          ? "bg-[var(--color-surface)] text-[var(--color-ink-strong)] shadow-[var(--shadow-card)]"
                           : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
                       }`}
-                      key={item}
-                      onClick={() => setDomain(item)}
-                      type="button"
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-                <nav className="grid grid-cols-2 gap-2 rounded-md bg-[var(--color-soft)] p-1 sm:flex">
-                  {WORKSPACE_VIEW_OPTIONS.map((option) => (
-                    <button
-                      className={`rounded px-3 py-1.5 text-sm ${
-                        workspaceView === option.view
-                          ? "bg-[var(--color-accent)] text-white shadow-sm"
-                          : "text-[var(--color-muted)] hover:bg-white hover:text-[var(--color-ink)]"
-                      }`}
-                      key={option.view}
-                      onClick={() => setWorkspaceView(option.view)}
+                      key={option.mode}
+                      onClick={() => setResourceMode(option.mode)}
                       type="button"
                     >
                       {option.label}
                     </button>
                   ))}
-                </nav>
+                </div>
               </div>
+              <section className="ink-card flex min-h-0 flex-1 flex-col overflow-hidden">
+                {resourceMode === "reading" ? (
+                  <ReadingListWorkspaceView busyId={readingListBusyId} groups={readingListGroups} isLoading={isLoopStatusLoading} items={readingListItems} message={readingListMessage} onChangeStatus={changeReadingStatus} onRefresh={() => refreshLoopStatus()} summary={readingListSummary} />
+                ) : (
+                  <FeedWorkspaceView busyId={feedBusyId} isLoading={isLoopStatusLoading} message={feedMessage} onFeedback={recordFeedFeedback} onRefresh={() => refreshLoopStatus()} view={feedRecommendationView} />
+                )}
+              </section>
             </div>
-          </header>
-
-          <div className="min-h-0 flex-1 overflow-hidden bg-[var(--color-canvas)]">
-            {workspaceView === "tutor" ? (
-              <div className="grid h-full min-h-0 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden">
-                <section className="flex min-h-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]">
-                  <div className="flex flex-col gap-3 border-b border-[var(--color-border)] px-5 py-4 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <div className="text-sm text-[var(--color-muted)]">Learning workspace</div>
-                      <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-                        {WORKSPACE_VIEW_META[workspaceView].title}
-                      </h1>
-                    </div>
-                    <div className="flex rounded-md bg-[var(--color-soft)] p-1">
-                      {LEARNING_MODE_OPTIONS.map((option) => (
-                        <button
-                          className={`rounded px-3 py-1.5 text-sm ${
-                            learningMode === option.mode
-                              ? "bg-white text-[var(--color-ink)] shadow-sm"
-                              : "text-[var(--color-muted)]"
-                          }`}
-                          key={option.mode}
-                          onClick={() => setLearningMode(option.mode)}
-                          type="button"
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
+          ) : workspaceView === "dashboard" ? (
+            <div className="mx-auto h-full min-h-0 w-full max-w-[1280px] overflow-y-auto px-4 pb-6 pt-3 sm:px-6 md:pt-0">
+              <DashboardWorkspaceView evidence={evidenceTimeline} isLoading={isLoopStatusLoading} message={loopStatusMessage} onRefresh={() => refreshLoopStatus()} portraits={portraitTimeline} status={loopStatus} summary={dashboardSummary} />
+            </div>
+          ) : workspaceView === "portrait" ? (
+            <div className="mx-auto h-full min-h-0 w-full max-w-[1080px] overflow-y-auto px-4 pb-6 pt-3 sm:px-6 md:pt-0">
+              <PortraitStatusPanel isLoading={isLoopStatusLoading} message={loopStatusMessage} onRefresh={() => refreshLoopStatus()} onRequestRevision={requestPortraitRevision} revisionBusy={isPortraitRevisionSaving} revisionMessage={portraitRevisionMessage} status={loopStatus} timeline={portraitTimeline} />
+            </div>
+          ) : (
+            <div className="mx-auto h-full min-h-0 w-full max-w-[1080px] overflow-y-auto px-4 pb-6 pt-3 sm:px-6 md:pt-0">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section className="ink-card p-5">
+                  <div className="ink-eyebrow">连接</div>
+                  <h2 className="ink-title mt-1.5 text-lg">API Key</h2>
+                  <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}{isClaudeReady ? " · Claude 已初始化" : ""}</div>
+                  <input className="ink-field mt-3" onChange={(event) => setApiKeyInput(event.target.value)} placeholder="Anthropic API Key" type="password" value={apiKeyInput} />
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <button className="ink-btn ink-btn-seal" disabled={isKeyBusy} onClick={saveKey} type="button">保存</button>
+                    <button className="ink-btn ink-btn-ghost" disabled={isKeyBusy} onClick={deleteKey} type="button">删除</button>
+                    <button className="ink-btn ink-btn-ghost" disabled={isKeyBusy} onClick={refreshKeyStatus} type="button">刷新</button>
                   </div>
-
-                  {learningMode === "tutor" ? (
-                    <div className="flex min-h-0 flex-1 flex-col p-5">
-                      <div className="flex min-h-0 flex-1 flex-col rounded-md bg-[var(--color-soft)] p-4">
-                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
-                          {tutorMessages.length === 0 ? (
-                            <div className="flex h-full items-center justify-center text-center text-sm leading-6 text-[var(--color-muted)]">
-                              说出你正在学什么。BanLea 会结合画像推荐资料，并把真实资料写入书单。
-                            </div>
-                          ) : (
-                            tutorMessages.map((message) => (
-                              <div
-                                className={`max-w-[82%] whitespace-pre-wrap rounded-md px-3 py-2 text-sm leading-6 ${
-                                  message.role === "user"
-                                    ? "ml-auto bg-[var(--color-accent)] text-white"
-                                    : "mr-auto bg-white text-[var(--color-ink)] shadow-sm"
-                                }`}
-                                key={message.id}
-                              >
-                                {message.content}
-                              </div>
-                            ))
-                          )}
-                        </div>
-
-                        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                          <textarea
-                            className="min-h-16 flex-1 resize-none rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-                            onChange={(event) => setTutorInput(event.target.value)}
-                            value={tutorInput}
-                          />
-                          <button
-                            className="rounded-md bg-[var(--color-accent)] px-5 py-2 text-sm font-medium text-white disabled:opacity-50 sm:w-24"
-                            disabled={isSending}
-                            onClick={sendTutorMessage}
-                            type="button"
-                          >
-                            {isSending ? "发送中" : "发送"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : learningMode === "reading" ? (
-                    <ReadingListWorkspaceView
-                      busyId={readingListBusyId}
-                      groups={readingListGroups}
-                      isLoading={isLoopStatusLoading}
-                      items={readingListItems}
-                      message={readingListMessage}
-                      onChangeStatus={changeReadingStatus}
-                      onRefresh={() => refreshLoopStatus()}
-                      summary={readingListSummary}
-                    />
-                  ) : (
-                    <FeedWorkspaceView
-                      busyId={feedBusyId}
-                      isLoading={isLoopStatusLoading}
-                      message={feedMessage}
-                      onFeedback={recordFeedFeedback}
-                      onRefresh={() => refreshLoopStatus()}
-                      view={feedRecommendationView}
-                    />
-                  )}
+                  <div className="mt-3 text-xs text-[var(--color-faint)]">{apiKeyMessage}</div>
                 </section>
 
-                <aside className="space-y-4 lg:min-h-0 lg:overflow-y-auto">
-                  <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                    <div className="text-sm font-medium">快速记录</div>
-                    <div className="mt-3 grid grid-cols-3 gap-2">
-                      {EVENT_OPTIONS.map((option) => (
-                        <button
-                          className={`rounded-md border px-3 py-2 text-sm ${
-                            kind === option.kind
-                              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                              : "border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-soft)]"
-                          }`}
-                          key={option.kind}
-                          onClick={() => setKind(option.kind)}
-                          type="button"
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                    <label className="mt-3 block text-xs font-medium text-[var(--color-muted)]">
-                      内容
-                      <textarea
-                        className="mt-2 min-h-20 w-full resize-none rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                        onChange={(event) => setContent(event.target.value)}
-                        value={content}
-                      />
-                    </label>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <label className="text-xs font-medium text-[var(--color-muted)]">
-                        得分
-                        <input
-                          className="mt-2 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                          max="1"
-                          min="0"
-                          onChange={(event) => setScore(Number(event.target.value))}
-                          step="0.05"
-                          type="number"
-                          value={score}
-                        />
-                      </label>
-                      <label className="text-xs font-medium text-[var(--color-muted)]">
-                        停留
-                        <input
-                          className="mt-2 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                          min="0"
-                          onChange={(event) => setDwellSeconds(Number(event.target.value))}
-                          type="number"
-                          value={dwellSeconds}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0 truncate text-sm text-[var(--color-muted)]">
-                        {selectedLabel} · {domain}
-                      </div>
-                      <button
-                        className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                        disabled={isSaving}
-                        onClick={recordEvent}
-                        type="button"
-                      >
-                        {isSaving ? "写入中" : "记录"}
-                      </button>
-                    </div>
-                    <div className="mt-3 rounded-md bg-[var(--color-soft)] p-3 text-sm text-[var(--color-muted)]">
-                      {status}
-                    </div>
-                  </section>
-
-                  <DashboardSummaryPanel summary={dashboardSummary} />
-
-                  <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm leading-6 text-[var(--color-muted)]">
-                    <div className="text-sm font-medium text-[var(--color-ink)]">本轮验证</div>
-                    {checkQuestion ? (
-                      <>
-                        <div className="mt-3 text-[var(--color-ink)]">{checkQuestion.prompt}</div>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
-                          <button
-                            className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm disabled:opacity-50"
-                            disabled={isCheckSaving}
-                            onClick={() => recordCheckResult(0.4)}
-                            type="button"
-                          >
-                            未掌握
-                          </button>
-                          <button
-                            className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                            disabled={isCheckSaving}
-                            onClick={() => recordCheckResult(0.85)}
-                            type="button"
-                          >
-                            已掌握
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="mt-3">暂无验证问题</div>
-                    )}
-                  </section>
-
-                  <ReadingListPanel
-                    busyId={readingListBusyId}
-                    groups={readingListGroups}
-                    items={readingListItems}
-                    message={readingListMessage}
-                    onChangeStatus={changeReadingStatus}
-                    summary={readingListSummary}
-                  />
-                </aside>
-              </div>
-            ) : workspaceView === "dashboard" ? (
-              <div className="h-full min-h-0 overflow-y-auto">
-                <DashboardWorkspaceView
-                  evidence={evidenceTimeline}
-                  isLoading={isLoopStatusLoading}
-                  message={loopStatusMessage}
-                  onRefresh={() => refreshLoopStatus()}
-                  portraits={portraitTimeline}
-                  status={loopStatus}
-                  summary={dashboardSummary}
-                />
-              </div>
-            ) : workspaceView === "portrait" ? (
-              <div className="grid h-full min-h-0 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-                <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                  <div className="text-sm text-[var(--color-muted)]">Learner model</div>
-                  <h1 className="mt-1 text-2xl font-semibold tracking-tight">我的画像</h1>
-                  <PortraitStatusPanel
-                    isLoading={isLoopStatusLoading}
-                    message={loopStatusMessage}
-                    onRefresh={() => refreshLoopStatus()}
-                    onRequestRevision={requestPortraitRevision}
-                    revisionBusy={isPortraitRevisionSaving}
-                    revisionMessage={portraitRevisionMessage}
-                    status={loopStatus}
-                    timeline={portraitTimeline}
-                  />
-                </section>
-                <aside className="space-y-4">
-                  <DashboardSummaryPanel summary={dashboardSummary} />
-                  <EvidenceStatusPanel
-                    lastEvidence={lastEvidence}
-                    lastResult={lastResult}
-                    timeline={evidenceTimeline}
-                  />
-                </aside>
-              </div>
-            ) : (
-              <div className="grid h-full min-h-0 gap-4 overflow-y-auto p-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <section className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-                  <div className="text-sm text-[var(--color-muted)]">Profile & settings</div>
-                  <h1 className="mt-1 text-2xl font-semibold tracking-tight">关于我</h1>
-
-                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                    <section className="rounded-md border border-[var(--color-border)] p-4">
-                      <div className="text-sm font-medium">API Key</div>
-                      <div className="mt-3 text-sm text-[var(--color-muted)]">
-                        {apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}
-                        {isClaudeReady ? " · Claude 已初始化" : ""}
-                      </div>
-                      <input
-                        className="mt-3 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-                        onChange={(event) => setApiKeyInput(event.target.value)}
-                        placeholder="Anthropic API Key"
-                        type="password"
-                        value={apiKeyInput}
-                      />
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <button
-                          className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                          disabled={isKeyBusy}
-                          onClick={saveKey}
-                          type="button"
-                        >
-                          保存
-                        </button>
-                        <button
-                          className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
-                          disabled={isKeyBusy}
-                          onClick={deleteKey}
-                          type="button"
-                        >
-                          删除
-                        </button>
-                        <button
-                          className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-muted)] disabled:opacity-50"
-                          disabled={isKeyBusy}
-                          onClick={refreshKeyStatus}
-                          type="button"
-                        >
-                          刷新
-                        </button>
-                      </div>
-                      <div className="mt-3 text-sm text-[var(--color-muted)]">
-                        {apiKeyMessage}
-                      </div>
-                    </section>
-
-                    <section className="rounded-md border border-[var(--color-border)] p-4">
-                      <div className="text-sm font-medium">当前领域</div>
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        {["computer_science", "physics", "global"].map((item) => (
-                          <button
-                            className={`rounded-md px-3 py-2 text-sm ${
-                              domain === item
-                                ? "bg-[var(--color-accent)] text-white"
-                                : "bg-[var(--color-soft)] text-[var(--color-muted)]"
-                            }`}
-                            key={item}
-                            onClick={() => setDomain(item)}
-                            type="button"
-                          >
-                            {item}
-                          </button>
-                        ))}
-                      </div>
-                    </section>
+                <section className="ink-card p-5">
+                  <div className="ink-eyebrow">领域</div>
+                  <h2 className="ink-title mt-1.5 text-lg">当前领域</h2>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    {DOMAIN_OPTIONS.map((item) => (
+                      <button className={domain === item.value ? "ink-btn" : "ink-btn ink-btn-ghost"} key={item.value} onClick={() => setDomain(item.value)} type="button">{item.label}</button>
+                    ))}
                   </div>
-
-                  <section className="mt-4 rounded-md border border-[var(--color-border)] p-4">
-                    <div className="text-sm font-medium">冷启动建档</div>
-                    <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                      <label className="block text-xs font-medium text-[var(--color-muted)]">
-                        目标
-                        <input
-                          className="mt-2 w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                          onChange={(event) => setOnboardingGoal(event.target.value)}
-                          value={onboardingGoal}
-                        />
-                      </label>
-                      <label className="block text-xs font-medium text-[var(--color-muted)]">
-                        兴趣方向
-                        <textarea
-                          className="mt-2 min-h-20 w-full resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                          onChange={(event) => setOnboardingInterests(event.target.value)}
-                          value={onboardingInterests}
-                        />
-                      </label>
-                      <label className="block text-xs font-medium text-[var(--color-muted)]">
-                        背景
-                        <textarea
-                          className="mt-2 min-h-20 w-full resize-none rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-accent)]"
-                          onChange={(event) => setOnboardingBackground(event.target.value)}
-                          value={onboardingBackground}
-                        />
-                      </label>
-                    </div>
-                    <div className="mt-4 flex items-center justify-between gap-3">
-                      <div className="text-sm text-[var(--color-muted)]">
-                        {onboardingMessage}
-                      </div>
-                      <button
-                        className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                        disabled={isOnboardingSaving}
-                        onClick={saveOnboardingProfile}
-                        type="button"
-                      >
-                        {isOnboardingSaving ? "保存中" : "保存建档"}
-                      </button>
-                    </div>
-                  </section>
+                  <p className="mt-4 text-xs leading-5 text-[var(--color-faint)]">领域决定子画像与推荐的范围，可随时切换。</p>
                 </section>
-
-                <aside className="rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                  <ResourceSourceSettingsPanel
-                    isBusy={isResourceSourceBusy}
-                    message={resourceSourceMessage}
-                    onRefresh={refreshResourceSources}
-                    onToggle={toggleResourceSource}
-                    statuses={resourceSourceStatuses}
-                  />
-                  <EvidenceStatusPanel
-                    lastEvidence={lastEvidence}
-                    lastResult={lastResult}
-                    timeline={evidenceTimeline}
-                  />
-                </aside>
               </div>
-            )}
-          </div>
+
+              <section className="ink-card mt-4 p-5">
+                <div className="ink-eyebrow">建档</div>
+                <h2 className="ink-title mt-1.5 text-lg">冷启动建档</h2>
+                <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                  <label className="block text-xs font-medium text-[var(--color-muted)]">目标<input className="ink-field mt-2" onChange={(event) => setOnboardingGoal(event.target.value)} value={onboardingGoal} /></label>
+                  <label className="block text-xs font-medium text-[var(--color-muted)]">兴趣方向<textarea className="ink-field mt-2 min-h-20 resize-none" onChange={(event) => setOnboardingInterests(event.target.value)} value={onboardingInterests} /></label>
+                  <label className="block text-xs font-medium text-[var(--color-muted)]">背景<textarea className="ink-field mt-2 min-h-20 resize-none" onChange={(event) => setOnboardingBackground(event.target.value)} value={onboardingBackground} /></label>
+                </div>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <div className="text-xs text-[var(--color-faint)]">{onboardingMessage}</div>
+                  <button className="ink-btn ink-btn-seal" disabled={isOnboardingSaving} onClick={saveOnboardingProfile} type="button">{isOnboardingSaving ? "保存中…" : "保存建档"}</button>
+                </div>
+              </section>
+
+              <section className="ink-card mt-4 p-5">
+                <div className="ink-eyebrow">足迹</div>
+                <h2 className="ink-title mt-1.5 text-lg">最近活动</h2>
+                <div className="mt-3 text-sm leading-6 text-[var(--color-muted)]">{lastEvidence ? lastEvidence.summary : "暂无活动"}{lastResult ? " · 已同步" : ""}</div>
+              </section>
+            </div>
+          )}
         </section>
       </main>
     </div>
