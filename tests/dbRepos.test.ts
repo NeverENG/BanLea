@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createDomainRepository } from "@/db/domainRepo";
 import { createEvidenceRepository } from "@/db/evidenceRepo";
 import { createOnboardingProfileRepository } from "@/db/onboardingProfileRepo";
 import { createPortraitRepository } from "@/db/portraitRepo";
@@ -114,6 +115,86 @@ function newOnboardingProfile(
     ...overrides,
   };
 }
+
+describe("domainRepository", () => {
+  it("insert 写入学习文件夹", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }]);
+    const repo = createDomainRepository(db);
+
+    const folder = await repo.insert({
+      id: "kubernetes",
+      name: "Kubernetes",
+      createdAt: "2026-06-10T00:00:00.000Z",
+    });
+
+    expect(folder).toEqual({
+      id: "kubernetes",
+      name: "Kubernetes",
+      createdAt: "2026-06-10T00:00:00.000Z",
+    });
+    expect(db.executeCalls[0].query).toContain("INSERT INTO domains");
+    expect(db.executeCalls[0].bindValues).toEqual([
+      "kubernetes",
+      "Kubernetes",
+      "2026-06-10T00:00:00.000Z",
+    ]);
+  });
+
+  it("list 读取并映射学习文件夹", async () => {
+    const db = new MockDb([], [
+      [
+        {
+          id: "computer_science",
+          name: "计算机",
+          created_at: "2026-06-10T00:00:00.000Z",
+        },
+        {
+          id: "kubernetes",
+          name: "Kubernetes",
+          created_at: "2026-06-11T00:00:00.000Z",
+        },
+      ],
+    ]);
+
+    const folders = await createDomainRepository(db).list();
+
+    expect(folders).toEqual([
+      {
+        id: "computer_science",
+        name: "计算机",
+        createdAt: "2026-06-10T00:00:00.000Z",
+      },
+      {
+        id: "kubernetes",
+        name: "Kubernetes",
+        createdAt: "2026-06-11T00:00:00.000Z",
+      },
+    ]);
+    expect(db.selectCalls[0].query).toContain("FROM domains");
+  });
+
+  it("ensureDefaults 先初始化默认文件夹再读取列表", async () => {
+    const db = new MockDb([{ rowsAffected: 1 }, { rowsAffected: 0 }], [[]]);
+    const repo = createDomainRepository(db);
+
+    await repo.ensureDefaults([
+      {
+        id: "computer_science",
+        name: "计算机",
+        createdAt: "2026-06-10T00:00:00.000Z",
+      },
+      {
+        id: "physics",
+        name: "物理",
+        createdAt: "2026-06-10T00:00:00.000Z",
+      },
+    ]);
+
+    expect(db.executeCalls).toHaveLength(2);
+    expect(db.executeCalls[0].query).toContain("INSERT OR IGNORE INTO domains");
+    expect(db.selectCalls).toHaveLength(1);
+  });
+});
 
 describe("portraitRepository", () => {
   it("save 写入 portrait_versions 并返回插入记录", async () => {

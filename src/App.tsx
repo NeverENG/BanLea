@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createGitHubResourceSource } from "@/core/sources";
 import {
+  getDomainRepository,
   getEvidenceRepository,
   getOnboardingProfileRepository,
   getPortraitRepository,
@@ -79,12 +80,14 @@ import type {
 } from "@/core/harness";
 import type { ReadingListStatus } from "@/types/readingList";
 import type { OnboardingProfile } from "@/types/onboarding";
+import type { DomainRecord, NewDomainRecord } from "@/db/domainRepo";
 
 type WorkspaceView = "tutor" | "resources" | "dashboard" | "portrait" | "profile";
 type ResourceMode = "reading" | "feed";
 type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "banlea-theme";
+const DOMAIN_FOLDER_STORAGE_KEY = "banlea-domain-folders";
 
 const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string; glyph: string }[] = [
   { view: "tutor", label: "学习", glyph: "学" },
@@ -99,10 +102,24 @@ const RESOURCE_MODE_OPTIONS: { mode: ResourceMode; label: string }[] = [
   { mode: "feed", label: "推荐" },
 ];
 
-const DOMAIN_OPTIONS: { value: string; label: string }[] = [
-  { value: "computer_science", label: "计算机" },
-  { value: "physics", label: "物理" },
-  { value: "global", label: "全部" },
+const DEFAULT_DOMAIN_CREATED_AT = "2026-06-10T00:00:00.000Z";
+
+const DEFAULT_DOMAIN_FOLDERS: NewDomainRecord[] = [
+  {
+    id: "computer_science",
+    name: "计算机",
+    createdAt: DEFAULT_DOMAIN_CREATED_AT,
+  },
+  {
+    id: "physics",
+    name: "物理",
+    createdAt: DEFAULT_DOMAIN_CREATED_AT,
+  },
+  {
+    id: "global",
+    name: "全部",
+    createdAt: DEFAULT_DOMAIN_CREATED_AT,
+  },
 ];
 
 const WORKSPACE_VIEW_META: Record<WorkspaceView, { eyebrow: string; title: string }> = {
@@ -154,8 +171,85 @@ function scopeForDomain(domain: string): "global" | "domain" {
   return domain === "global" ? "global" : "domain";
 }
 
-function domainLabel(domain: string): string {
-  return DOMAIN_OPTIONS.find((item) => item.value === domain)?.label ?? domain;
+function domainLabel(domain: string, folders: DomainRecord[]): string {
+  return (
+    folders.find((item) => item.id === domain)?.name ??
+    DEFAULT_DOMAIN_FOLDERS.find((item) => item.id === domain)?.name ??
+    domain
+  );
+}
+
+function slugifyDomainName(name: string): string {
+  const asciiSlug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return asciiSlug || `folder_${Date.now().toString(36)}`;
+}
+
+function uniqueDomainId(name: string, folders: DomainRecord[]): string {
+  const base = slugifyDomainName(name);
+  const ids = new Set([
+    ...DEFAULT_DOMAIN_FOLDERS.map((item) => item.id),
+    ...folders.map((item) => item.id),
+  ]);
+
+  if (!ids.has(base)) {
+    return base;
+  }
+
+  let index = 2;
+  while (ids.has(`${base}_${index}`)) {
+    index += 1;
+  }
+  return `${base}_${index}`;
+}
+
+function mergeDomainFolders(folders: DomainRecord[]): DomainRecord[] {
+  const seen = new Set<string>();
+  return folders.filter((folder) => {
+    if (seen.has(folder.id)) {
+      return false;
+    }
+    seen.add(folder.id);
+    return true;
+  });
+}
+
+function readPreviewDomainFolders(): DomainRecord[] {
+  if (typeof window === "undefined") {
+    return DEFAULT_DOMAIN_FOLDERS;
+  }
+  try {
+    const saved = window.localStorage.getItem(DOMAIN_FOLDER_STORAGE_KEY);
+    const parsed = saved ? (JSON.parse(saved) as unknown) : [];
+    const savedFolders = Array.isArray(parsed)
+      ? parsed.filter(
+          (item): item is DomainRecord =>
+            Boolean(item) &&
+            typeof item === "object" &&
+            typeof (item as DomainRecord).id === "string" &&
+            typeof (item as DomainRecord).name === "string" &&
+            typeof (item as DomainRecord).createdAt === "string",
+        )
+      : [];
+    return mergeDomainFolders([...DEFAULT_DOMAIN_FOLDERS, ...savedFolders]);
+  } catch {
+    return DEFAULT_DOMAIN_FOLDERS;
+  }
+}
+
+function savePreviewDomainFolders(folders: DomainRecord[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(DOMAIN_FOLDER_STORAGE_KEY, JSON.stringify(folders));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function readInitialTheme(): ThemeMode {
@@ -198,6 +292,12 @@ async function runLiveHarnessUpdate(
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(readInitialTheme);
   const [domain, setDomain] = useState("computer_science");
+  const [domainFolders, setDomainFolders] = useState<DomainRecord[]>(
+    DEFAULT_DOMAIN_FOLDERS,
+  );
+  const [domainFolderInput, setDomainFolderInput] = useState("");
+  const [domainFolderMessage, setDomainFolderMessage] = useState("已就绪");
+  const [isDomainFolderBusy, setIsDomainFolderBusy] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("tutor");
   const [resourceMode, setResourceMode] = useState<ResourceMode>("reading");
   const [tutorInput, setTutorInput] = useState("帮我入门 k8s");
@@ -280,6 +380,38 @@ export default function App() {
       // ignore storage errors
     }
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsDomainFolderBusy(true);
+    getDomainRepository()
+      .then((repository) => repository.ensureDefaults(DEFAULT_DOMAIN_FOLDERS))
+      .then((folders) => {
+        if (cancelled) {
+          return;
+        }
+        setDomainFolders(folders);
+        setDomainFolderMessage(`文件夹 ${folders.length}`);
+        if (!folders.some((folder) => folder.id === domain)) {
+          setDomain(folders[0]?.id ?? "computer_science");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          const folders = readPreviewDomainFolders();
+          setDomainFolders(folders);
+          setDomainFolderMessage("浏览器预览模式");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsDomainFolderBusy(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [domain]);
 
   useEffect(() => {
     let cancelled = false;
@@ -488,6 +620,44 @@ export default function App() {
       setApiKeyMessage(friendlyErrorMessage(error, "读取失败"));
     } finally {
       setIsKeyBusy(false);
+    }
+  }
+
+  async function createDomainFolder() {
+    const name = domainFolderInput.trim();
+    if (!name) {
+      setDomainFolderMessage("请输入文件夹名称");
+      return;
+    }
+
+    setIsDomainFolderBusy(true);
+    setDomainFolderMessage("创建中");
+    try {
+      const repository = await getDomainRepository();
+      const folder = await repository.insert({
+        id: uniqueDomainId(name, domainFolders),
+        name,
+        createdAt: new Date().toISOString(),
+      });
+      const folders = await repository.list();
+      setDomainFolders(folders);
+      setDomain(folder.id);
+      setDomainFolderInput("");
+      setDomainFolderMessage("已创建");
+    } catch (error) {
+      const folder: DomainRecord = {
+        id: uniqueDomainId(name, domainFolders),
+        name,
+        createdAt: new Date().toISOString(),
+      };
+      const folders = mergeDomainFolders([...domainFolders, folder]);
+      savePreviewDomainFolders(folders);
+      setDomainFolders(folders);
+      setDomain(folder.id);
+      setDomainFolderInput("");
+      setDomainFolderMessage("已在浏览器预览中创建");
+    } finally {
+      setIsDomainFolderBusy(false);
     }
   }
 
@@ -783,22 +953,46 @@ export default function App() {
         </nav>
 
         <div className="mt-9 px-1.5">
-          <div className="ink-eyebrow">领域</div>
+          <div className="ink-eyebrow">文件夹</div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {DOMAIN_OPTIONS.map((item) => (
+            {domainFolders.map((item) => (
               <button
                 className={`rounded-full border px-3 py-1 text-xs transition ${
-                  domain === item.value
+                  domain === item.id
                     ? "border-transparent bg-[var(--color-accent)] text-[var(--color-on-accent)]"
                     : "border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
                 }`}
-                key={item.value}
-                onClick={() => setDomain(item.value)}
+                key={item.id}
+                onClick={() => setDomain(item.id)}
                 type="button"
               >
-                {item.label}
+                {item.name}
               </button>
             ))}
+          </div>
+          <div className="mt-3 flex gap-1.5">
+            <input
+              className="min-w-0 flex-1 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs outline-none focus:border-[var(--color-accent)]"
+              onChange={(event) => setDomainFolderInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  void createDomainFolder();
+                }
+              }}
+              placeholder="新文件夹"
+              value={domainFolderInput}
+            />
+            <button
+              className="rounded-full bg-[var(--color-ink-strong)] px-3 py-1 text-xs text-[var(--color-canvas)] disabled:opacity-40"
+              disabled={isDomainFolderBusy || !domainFolderInput.trim()}
+              onClick={createDomainFolder}
+              type="button"
+            >
+              新建
+            </button>
+          </div>
+          <div className="mt-2 truncate text-xs text-[var(--color-faint)]">
+            {domainFolderMessage}
           </div>
         </div>
 
@@ -867,7 +1061,7 @@ export default function App() {
               {viewMeta.title}
             </h1>
           </div>
-          <span className="ink-chip">{domainLabel(domain)}</span>
+          <span className="ink-chip">{domainLabel(domain, domainFolders)}</span>
         </header>
 
         <section className="min-h-0 flex-1 overflow-hidden">
@@ -885,7 +1079,7 @@ export default function App() {
                     <div className="mt-7 flex flex-wrap justify-center gap-2">
                       <span className="ink-chip">书单 {readingListSummary.total}</span>
                       <span className="ink-chip">画像 v{dashboardSummary.latestPortraitVersion ?? "—"}</span>
-                      <span className="ink-chip">{domainLabel(domain)}</span>
+                      <span className="ink-chip">{domainLabel(domain, domainFolders)}</span>
                     </div>
                   </div>
                 ) : (
@@ -984,14 +1178,38 @@ export default function App() {
                 </section>
 
                 <section className="ink-card p-5">
-                  <div className="ink-eyebrow">领域</div>
-                  <h2 className="ink-title mt-1.5 text-lg">当前领域</h2>
+                  <div className="ink-eyebrow">文件夹</div>
+                  <h2 className="ink-title mt-1.5 text-lg">学习文件夹</h2>
                   <div className="mt-4 grid grid-cols-3 gap-2">
-                    {DOMAIN_OPTIONS.map((item) => (
-                      <button className={domain === item.value ? "ink-btn" : "ink-btn ink-btn-ghost"} key={item.value} onClick={() => setDomain(item.value)} type="button">{item.label}</button>
+                    {domainFolders.map((item) => (
+                      <button className={domain === item.id ? "ink-btn" : "ink-btn ink-btn-ghost"} key={item.id} onClick={() => setDomain(item.id)} type="button">{item.name}</button>
                     ))}
                   </div>
-                  <p className="mt-4 text-xs leading-5 text-[var(--color-faint)]">领域决定子画像与推荐的范围，可随时切换。</p>
+                  <div className="mt-4 flex gap-2">
+                    <input
+                      className="ink-field"
+                      onChange={(event) => setDomainFolderInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          void createDomainFolder();
+                        }
+                      }}
+                      placeholder="新建学习文件夹"
+                      value={domainFolderInput}
+                    />
+                    <button
+                      className="ink-btn ink-btn-seal shrink-0"
+                      disabled={isDomainFolderBusy || !domainFolderInput.trim()}
+                      onClick={createDomainFolder}
+                      type="button"
+                    >
+                      新建
+                    </button>
+                  </div>
+                  <p className="mt-4 text-xs leading-5 text-[var(--color-faint)]">
+                    每个学习文件夹对应一个子 harness；对话、书单、画像和推荐会按文件夹隔离。
+                    {domainFolderMessage ? ` ${domainFolderMessage}` : ""}
+                  </p>
                 </section>
               </div>
 

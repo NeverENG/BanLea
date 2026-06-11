@@ -47,3 +47,13 @@ BanLea App Shell
 - 学习台内仍能发送 tutor 消息、查看书单、查看推荐。
 - `npm run typecheck`、`npm test`、`npm run build` 通过。
 - 浏览器检查桌面与窄屏不出现明显重叠或空白主场景。
+
+## 学习文件夹修正（2026-06-11）
+- 产品语义：原“领域”改为用户自建的“学习文件夹”；每个学习文件夹对应一个子 harness 上下文。
+- 数据落点：复用现有 `domains` 表和各业务表的 `domain_id`，不改动证据、画像、书单、推荐的底层关联方式。
+- 已新增 `DomainRepository`：
+  - `ensureDefaults` 初始化默认学习文件夹；
+  - `list` 读取文件夹；
+  - `insert` 新建用户文件夹。
+- App 启动时会加载学习文件夹；新建后自动切换到该文件夹，后续对话、书单、画像、推荐都会使用新的 `domain_id`。
+- 浏览器预览没有 Tauri SQL 运行时，因此增加 localStorage fallback；桌面端仍以 SQLite `domains` 表为准。

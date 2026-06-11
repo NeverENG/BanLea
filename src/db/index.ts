@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import { createDomainRepository } from "./domainRepo";
 import { createEvidenceRepository } from "./evidenceRepo";
 import { createOnboardingProfileRepository } from "./onboardingProfileRepo";
 import { createPortraitRepository } from "./portraitRepo";
@@ -7,6 +8,7 @@ import { createRecommendationRepository } from "./recommendationRepo";
 import { createReadingListRepository } from "./readingListRepo";
 import { createTutorSessionRepository } from "./tutorSessionRepo";
 
+export * from "./domainRepo";
 export * from "./evidenceRepo";
 export * from "./onboardingProfileRepo";
 export * from "./portraitRepo";
@@ -35,6 +37,10 @@ export function getDb(): Promise<Database> {
     dbPromise = Database.load(DB_URL);
   }
   return dbPromise;
+}
+
+export async function getDomainRepository() {
+  return createDomainRepository(await getDb());
 }
 
 export async function getPortraitRepository() {
