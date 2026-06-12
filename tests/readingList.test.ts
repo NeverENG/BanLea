@@ -133,6 +133,42 @@ describe("reading-list feature", () => {
     });
   });
 
+  it("手动资料相同链接不会重复写入", async () => {
+    const repo = repository([
+      {
+        id: 7,
+        domain: "computer_science",
+        sourceId: "manual:existing",
+        title: "已有 Kubernetes 文档",
+        url: "https://kubernetes.io/docs/",
+        kind: "doc",
+        status: "reading",
+        addedAt: "2026-06-10T08:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+    ]);
+
+    const inserted = await addManualReadingListItem({
+      domain: "computer_science",
+      repository: repo,
+      title: "重复 Kubernetes 文档",
+      url: "kubernetes.io/docs/",
+      now: () => "2026-06-11T12:00:00.000Z",
+    });
+
+    expect(inserted).toEqual({
+      id: 7,
+      title: "已有 Kubernetes 文档",
+      kind: "doc",
+      status: "reading",
+      url: "https://kubernetes.io/docs/",
+      addedAt: "2026-06-10T08:00:00.000Z",
+    });
+    expect(repo.listByDomain).toHaveBeenCalledWith("computer_science");
+    expect(repo.insert).not.toHaveBeenCalled();
+  });
+
   it("把 tutor 资源建议写入待读书单", async () => {
     const repo = repository();
 

@@ -321,6 +321,11 @@ export async function addManualReadingListItem({
     status,
     addedAt: now(),
   });
+  const existingItems = await repository.listByDomain(domain);
+  const duplicate = existingItems.find((existing) => existing.url === item.url);
+  if (duplicate) {
+    return toViewItem(duplicate);
+  }
   const inserted = await repository.insert(item);
   return toViewItem(inserted);
 }
