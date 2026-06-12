@@ -45,7 +45,7 @@ describe("apiKeySettings", () => {
     });
   });
 
-  it("save 会 trim key 并返回已设置状态", async () => {
+  it("save 会 trim key、保存并初始化 Claude client", async () => {
     const apiKeyStore = store();
     const service = createApiKeySettingsService(apiKeyStore);
 
@@ -55,10 +55,31 @@ describe("apiKeySettings", () => {
       "sk-ant-api03-abcdef123456",
       "claude",
     );
+    expect(initClient).toHaveBeenCalledWith("sk-ant-api03-abcdef123456", "claude");
     expect(status).toEqual({
       provider: "claude",
       configured: true,
       maskedKey: "sk-ant-…3456",
+      clientInitialized: true,
+    });
+  });
+
+  it("save 支持初始化 DeepSeek provider", async () => {
+    const apiKeyStore = store();
+    const service = createApiKeySettingsService(apiKeyStore);
+
+    const status = await service.save("  sk-ds-abcdef123456  ", "deepseek");
+
+    expect(apiKeyStore.save).toHaveBeenCalledWith(
+      "sk-ds-abcdef123456",
+      "deepseek",
+    );
+    expect(initClient).toHaveBeenCalledWith("sk-ds-abcdef123456", "deepseek");
+    expect(status).toEqual({
+      provider: "deepseek",
+      configured: true,
+      maskedKey: "sk-ds-a…3456",
+      clientInitialized: true,
     });
   });
 

@@ -604,8 +604,7 @@ export default function App() {
     setIsKeyBusy(true);
     setApiKeyMessage("保存中");
     try {
-      await apiKeyService.save(apiKeyInput, apiProvider);
-      const next = await apiKeyService.initializeSavedKey(apiProvider);
+      const next = await apiKeyService.save(apiKeyInput, apiProvider);
       setApiKeyStatus({
         provider: next.provider,
         configured: next.configured,

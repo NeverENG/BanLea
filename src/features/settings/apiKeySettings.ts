@@ -27,7 +27,7 @@ export interface ApiKeyRuntimeStatus extends ApiKeyStatus {
 export interface ApiKeySettingsService {
   loadStatus(provider?: ApiProvider): Promise<ApiKeyStatus>;
   initializeSavedKey(provider?: ApiProvider): Promise<ApiKeyRuntimeStatus>;
-  save(key: string, provider?: ApiProvider): Promise<ApiKeyStatus>;
+  save(key: string, provider?: ApiProvider): Promise<ApiKeyRuntimeStatus>;
   delete(provider?: ApiProvider): Promise<ApiKeyStatus>;
 }
 
@@ -99,7 +99,10 @@ export function createApiKeySettingsService(
         throw new Error("API Key 不能为空");
       }
       await store.save(trimmed, provider);
-      return loadStatus(provider);
+      return {
+        ...statusFromKey(trimmed, provider),
+        clientInitialized: await initializeLlmClient(trimmed, provider),
+      };
     },
 
     async delete(provider = "claude") {

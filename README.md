@@ -189,7 +189,7 @@ BanLea/
 - Node.js ≥ 24 + npm ≥ 11
 - Rust 工具链（rustc + cargo ≥ 1.77）
 - VS C++ Build Tools（Windows）或 Xcode CLT（macOS）
-- Anthropic API Key
+- Claude 或 DeepSeek API Key
 
 ### 安装与运行
 
@@ -214,8 +214,8 @@ npm run tauri:build
 ### 配置 API Key
 
 1. 启动应用后进入「我的」页面，在「API Key」区域操作
-2. 填入你的 Anthropic API Key
-3. Key 自动存入 OS Keychain，后续启动自动读取
+2. 选择 Claude 或 DeepSeek，并填入对应 API Key
+3. Key 自动存入 OS Keychain；保存后会立即初始化当前 provider，后续启动自动读取
 
 ---
 

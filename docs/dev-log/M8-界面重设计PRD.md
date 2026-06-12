@@ -103,4 +103,5 @@ BanLea App Shell
 - LLM client 增加 DeepSeek OpenAI-compatible `/chat/completions` 适配：
   - `light` → `deepseek-v4-flash`；
   - `deep` → `deepseek-v4-pro`。
+- API Key settings service 调整为保存后立即初始化当前 provider，调用方不再需要额外读取 keychain 才能使用刚保存的 key。
 - 当前 DeepSeek 只用于提问式对话回复；画像 live update / structured output 仍限定 Claude，避免把非等价结构化能力混入 harness 更新链路。
