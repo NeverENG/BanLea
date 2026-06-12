@@ -109,3 +109,8 @@ BanLea App Shell
   - 支持没有结尾空行的最后一个 SSE 事件；
   - DeepSeek 流式遇到非 JSON 事件时忽略该事件，不中断已收到的文本聚合。
 - 当前 DeepSeek 只用于提问式对话回复；画像 live update / structured output 仍限定 Claude，避免把非等价结构化能力混入 harness 更新链路。
+
+## LLM 结构化输出容错（2026-06-12）
+- `askStructured` 保留原有 `output_config.format` 约束，同时在解析阶段兼容模型返回的 fenced JSON 或前后说明文字。
+- 解析顺序为：直接 JSON → fenced JSON → 从文本中扫描第一个可成功解析的 JSON object/array。
+- 扫描过程会识别字符串内的大括号，避免资料标题、摘要等文本内容中的 `{}` 误伤结构化解析。

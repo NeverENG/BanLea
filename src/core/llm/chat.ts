@@ -27,6 +27,95 @@ function textOf(content: ContentBlock[]): string {
   return content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
 }
 
+type JsonParseResult =
+  | { ok: true; value: unknown }
+  | { ok: false };
+
+function tryParseJson(raw: string): JsonParseResult {
+  try {
+    return { ok: true, value: JSON.parse(raw) as unknown };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function balancedJsonCandidate(text: string, start: number): string | null {
+  const first = text[start];
+  const expectedFirstEnd = first === "{" ? "}" : first === "[" ? "]" : null;
+  if (!expectedFirstEnd) {
+    return null;
+  }
+
+  const stack = [expectedFirstEnd];
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start + 1; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+    } else if (char === "{") {
+      stack.push("}");
+    } else if (char === "[") {
+      stack.push("]");
+    } else if (char === "}" || char === "]") {
+      if (stack.at(-1) !== char) {
+        return null;
+      }
+      stack.pop();
+      if (stack.length === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function parseStructuredJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  const direct = tryParseJson(trimmed);
+  if (direct.ok) {
+    return direct.value;
+  }
+
+  const fencedBlocks = trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+  for (const match of fencedBlocks) {
+    const fenced = tryParseJson(match[1].trim());
+    if (fenced.ok) {
+      return fenced.value;
+    }
+  }
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{" && trimmed[index] !== "[") {
+      continue;
+    }
+    const candidate = balancedJsonCandidate(trimmed, index);
+    if (!candidate) {
+      continue;
+    }
+    const parsed = tryParseJson(candidate);
+    if (parsed.ok) {
+      return parsed.value;
+    }
+  }
+
+  throw new Error("LLM structured output is not valid JSON");
+}
+
 /** 非流式调用，返回纯文本 */
 export async function ask(opts: AskOptions): Promise<string> {
   const res = await getClient().messages.create({
@@ -76,5 +165,5 @@ export async function askStructured<T>(
     },
     messages: opts.messages,
   });
-  return schema.parse(JSON.parse(textOf(res.content)));
+  return schema.parse(parseStructuredJson(textOf(res.content)));
 }
