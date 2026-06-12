@@ -178,7 +178,7 @@ BanLea/
 | **M5** 推荐引擎 | ✅ 最小闭环完成 |
 | **M6** 画像可视化 | ✅ 最小闭环完成 |
 | **M7** 资料源 | ✅ 最小闭环完成 |
-| **M8** 打磨发布 | 🔨 进行中（界面重设计 PRD + 全屏 App Shell + 学习文件夹 + 用户面收束 + 手动资料链接 + 资料写入去重 + 资料上下文对话 + DeepSeek 对话适配 + LLM 流式加固） |
+| **M8** 打磨发布 | 🔨 进行中（界面重设计 PRD + 全屏 App Shell + 学习文件夹 + 用户面收束 + 手动资料链接 + 资料写入去重 + 资料上下文对话 + DeepSeek 对话适配 + LLM 流式加固 + Provider runtime 防串线） |
 
 ---
 
@@ -216,6 +216,7 @@ npm run tauri:build
 1. 启动应用后进入「我的」页面，在「API Key」区域操作
 2. 选择 Claude 或 DeepSeek，并填入对应 API Key
 3. Key 自动存入 OS Keychain；保存后会立即初始化当前 provider，后续启动自动读取
+4. 切换到未配置 key 的 provider 时会清空旧 LLM runtime，避免继续沿用上一个 provider
 
 ---
 

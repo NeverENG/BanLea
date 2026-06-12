@@ -54,6 +54,7 @@ async function initializeLlmClient(
   provider: ApiProvider,
 ): Promise<boolean> {
   if (!key) {
+    await resetLlmClient();
     return false;
   }
   const { initClient } = await import("@/core/llm/client");

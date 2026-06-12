@@ -117,8 +117,24 @@ describe("apiKeySettings", () => {
     const status = await service.initializeSavedKey();
 
     expect(initClient).not.toHaveBeenCalled();
+    expect(resetClient).toHaveBeenCalledTimes(1);
     expect(status).toEqual({
       provider: "claude",
+      configured: false,
+      maskedKey: null,
+      clientInitialized: false,
+    });
+  });
+
+  it("initializeSavedKey resets runtime when selected provider has no key", async () => {
+    const service = createApiKeySettingsService(store());
+
+    const status = await service.initializeSavedKey("deepseek");
+
+    expect(initClient).not.toHaveBeenCalled();
+    expect(resetClient).toHaveBeenCalledTimes(1);
+    expect(status).toEqual({
+      provider: "deepseek",
       configured: false,
       maskedKey: null,
       clientInitialized: false,
