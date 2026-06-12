@@ -240,6 +240,38 @@ function limitItems<T>(items: T[], limit?: number): T[] {
   return typeof limit === "number" ? items.slice(0, Math.max(0, limit)) : items;
 }
 
+function sameReadingListIdentity(
+  existing: Pick<ReadingListItem, "sourceId" | "url">,
+  item: Pick<NewReadingListItem, "sourceId" | "url">,
+): boolean {
+  const sourceId = item.sourceId ?? null;
+  const url = item.url ?? null;
+  return Boolean(
+    (url && existing.url === url) ||
+      (sourceId && existing.sourceId === sourceId),
+  );
+}
+
+function findExistingReadingListItem(
+  existingItems: ReadingListItem[],
+  item: Pick<NewReadingListItem, "sourceId" | "url">,
+): ReadingListItem | null {
+  return (
+    existingItems.find((existing) => sameReadingListIdentity(existing, item)) ??
+    null
+  );
+}
+
+function appendReadingListIdentity(
+  existingItems: Pick<ReadingListItem, "sourceId" | "url">[],
+  item: Pick<NewReadingListItem, "sourceId" | "url">,
+) {
+  existingItems.push({
+    sourceId: item.sourceId ?? null,
+    url: item.url ?? null,
+  });
+}
+
 function resourceItemReason(item: ResourceItem): string {
   const parts = [item.summary, `source: ${item.sourceId}`].filter(
     (part): part is string => Boolean(part),
@@ -322,7 +354,7 @@ export async function addManualReadingListItem({
     addedAt: now(),
   });
   const existingItems = await repository.listByDomain(domain);
-  const duplicate = existingItems.find((existing) => existing.url === item.url);
+  const duplicate = findExistingReadingListItem(existingItems, item);
   if (duplicate) {
     return toViewItem(duplicate);
   }
@@ -392,9 +424,10 @@ export async function addTutorResourceSuggestions(
   }
 
   const addedAt = (options.now ?? defaultNow)();
-  const inserted = await Promise.all(
-    options.suggestions.map((suggestion, index) =>
-      options.repository.insert({
+  const existingItems = await options.repository.listByDomain(options.domain);
+  const insertItems = options.suggestions.reduce<NewReadingListItem[]>(
+    (items, suggestion, index) => {
+      const item: NewReadingListItem = {
         domain: options.domain,
         sourceId: sourceIdForSuggestion(
           suggestion,
@@ -407,8 +440,20 @@ export async function addTutorResourceSuggestions(
         kind: suggestion.kind,
         status: "todo",
         addedAt,
-      }),
-    ),
+      };
+
+      if (findExistingReadingListItem(existingItems, item)) {
+        return items;
+      }
+
+      appendReadingListIdentity(existingItems, item);
+      items.push(item);
+      return items;
+    },
+    [],
+  );
+  const inserted = await Promise.all(
+    insertItems.map((item) => options.repository.insert(item)),
   );
 
   return inserted.map(toViewItem);
@@ -429,8 +474,16 @@ export async function addResourceItemsToReadingList(
     limit: options.limit,
     status: options.status,
   });
+  const existingItems = await options.repository.listByDomain(options.domain);
+  const insertItems = items.filter((item) => {
+    if (findExistingReadingListItem(existingItems, item)) {
+      return false;
+    }
+    appendReadingListIdentity(existingItems, item);
+    return true;
+  });
   const inserted = await Promise.all(
-    items.map((item) => options.repository.insert(item)),
+    insertItems.map((item) => options.repository.insert(item)),
   );
 
   return inserted.map(toViewItem);

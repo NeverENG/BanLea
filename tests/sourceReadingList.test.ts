@@ -118,6 +118,52 @@ describe("source items for reading list", () => {
     );
   });
 
+  it("deduplicates resource items before direct insert", async () => {
+    const repo = repository();
+    const duplicateUrl: ResourceItem = {
+      ...repoResource,
+      id: "github:duplicate-url",
+    };
+
+    const items = await addResourceItemsToReadingList({
+      domain: "computer_science",
+      items: [repoResource, duplicateUrl],
+      repository: repo,
+      now: () => "2026-06-10T12:05:00.000Z",
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0].title).toBe("learning-rust/rust-by-example");
+    expect(repo.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips resource items already in the current domain", async () => {
+    const repo = repository([
+      {
+        id: 4,
+        domain: "computer_science",
+        sourceId: "github:12345",
+        title: "existing repo",
+        url: "https://github.com/learning-rust/rust-by-example",
+        kind: "repo",
+        status: "todo",
+        addedAt: "2026-06-10T12:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+    ]);
+
+    const items = await addResourceItemsToReadingList({
+      domain: "computer_science",
+      items: [repoResource],
+      repository: repo,
+      now: () => "2026-06-10T12:05:00.000Z",
+    });
+
+    expect(items).toEqual([]);
+    expect(repo.insert).not.toHaveBeenCalled();
+  });
+
   it("keeps source id when source-backed tutor suggestions are saved", async () => {
     const repo = repository();
     const suggestions = resourceItemsToTutorResourceSuggestions([repoResource]);
@@ -136,5 +182,34 @@ describe("source items for reading list", () => {
         title: "learning-rust/rust-by-example",
       }),
     );
+  });
+
+  it("skips duplicate source-backed tutor suggestions", async () => {
+    const repo = repository([
+      {
+        id: 5,
+        domain: "computer_science",
+        sourceId: "github:12345",
+        title: "existing repo",
+        url: "https://github.com/learning-rust/rust-by-example",
+        kind: "repo",
+        status: "todo",
+        addedAt: "2026-06-10T12:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+    ]);
+    const suggestions = resourceItemsToTutorResourceSuggestions([repoResource]);
+
+    const inserted = await addTutorResourceSuggestions({
+      domain: "computer_science",
+      suggestions,
+      repository: repo,
+      evidenceId: 12,
+      now: () => "2026-06-10T12:10:00.000Z",
+    });
+
+    expect(inserted).toEqual([]);
+    expect(repo.insert).not.toHaveBeenCalled();
   });
 });
