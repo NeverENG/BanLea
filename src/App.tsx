@@ -65,11 +65,9 @@ import {
 } from "@/features/reading-list";
 import { ReadingListWorkspaceView } from "@/features/reading-list/ReadingListWorkspaceView";
 import {
-  createLocalTutorCheckQuestion,
   createLocalTutorResourceSuggestions,
   createTutorInputService,
   loadTutorPromptContext,
-  type TutorCheckQuestion,
   type TutorMessage,
 } from "@/features/tutor";
 import { createSourceBackedTutorResourceSuggestionProvider } from "@/features/tutor/sourceSuggestions";
@@ -92,8 +90,6 @@ const DOMAIN_FOLDER_STORAGE_KEY = "banlea-domain-folders";
 const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string; glyph: string }[] = [
   { view: "tutor", label: "学习", glyph: "学" },
   { view: "resources", label: "资料", glyph: "册" },
-  { view: "dashboard", label: "数据", glyph: "迹" },
-  { view: "portrait", label: "画像", glyph: "象" },
   { view: "profile", label: "我的", glyph: "吾" },
 ];
 
@@ -323,7 +319,7 @@ export default function App() {
   const [onboardingBackground, setOnboardingBackground] = useState("");
   const [onboardingProfile, setOnboardingProfile] =
     useState<OnboardingProfile | null>(null);
-  const [onboardingMessage, setOnboardingMessage] = useState("未建档");
+  const [onboardingMessage, setOnboardingMessage] = useState("未填写");
   const [isOnboardingSaving, setIsOnboardingSaving] = useState(false);
   const [domainSnapshot, setDomainSnapshot] = useState<DomainLearningSnapshot | null>(
     null,
@@ -350,8 +346,6 @@ export default function App() {
   const [portraitRevisionMessage, setPortraitRevisionMessage] =
     useState("未提交");
   const [isPortraitRevisionSaving, setIsPortraitRevisionSaving] = useState(false);
-  const [checkQuestion, setCheckQuestion] = useState<TutorCheckQuestion | null>(null);
-  const [isCheckSaving, setIsCheckSaving] = useState(false);
 
   const apiKeyService = useMemo(() => createApiKeySettingsService(), []);
   const resourceSourceSettingsService = useMemo(
@@ -496,11 +490,11 @@ export default function App() {
         setOnboardingGoal(profile?.goal ?? "");
         setOnboardingInterests(profile?.interests.join("\n") ?? "");
         setOnboardingBackground(profile?.background ?? "");
-        setOnboardingMessage(profile ? "已读取" : "未建档");
+        setOnboardingMessage(profile ? "已读取" : "未填写");
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setOnboardingMessage(friendlyErrorMessage(error, "读取建档失败"));
+          setOnboardingMessage(friendlyErrorMessage(error, "读取偏好失败"));
         }
       });
 
@@ -544,7 +538,7 @@ export default function App() {
         return;
       }
 
-      setFeedMessage("同步推荐候选中");
+      setFeedMessage("同步推荐中");
       const persisted = await persistFeedRecommendationView({
         domain: snapshotForFeed.status.domain,
         view,
@@ -553,14 +547,14 @@ export default function App() {
 
       if (!cancelled) {
         setFeedRecommendationView(persisted);
-        setFeedMessage("推荐候选已同步");
+        setFeedMessage("推荐已同步");
       }
     }
 
     syncFeedRecommendations().catch((error: unknown) => {
       if (!cancelled) {
         setFeedMessage(
-          friendlyErrorMessage(error, "推荐候选同步失败"),
+          friendlyErrorMessage(error, "推荐同步失败"),
         );
       }
     });
@@ -699,7 +693,7 @@ export default function App() {
       setOnboardingMessage("已保存");
       await refreshLoopStatus(domain);
     } catch (error) {
-      setOnboardingMessage(friendlyErrorMessage(error, "保存建档失败"));
+      setOnboardingMessage(friendlyErrorMessage(error, "保存偏好失败"));
     } finally {
       setIsOnboardingSaving(false);
     }
@@ -769,7 +763,6 @@ export default function App() {
           }),
         replyGenerator,
         resourceSuggestionProvider,
-        checkQuestionProvider: createLocalTutorCheckQuestion,
       });
       const result = await service.sendUserMessage({
         domain,
@@ -789,7 +782,6 @@ export default function App() {
       setTutorInput("");
       setLastEvidence(result.learning.evidence);
       setLastResult(result.learning);
-      setCheckQuestion(result.checkQuestion);
       await addTutorResourceSuggestions({
         domain,
         suggestions: result.resourceSuggestions,
@@ -802,30 +794,6 @@ export default function App() {
       setStatus(friendlyErrorMessage(error, "发送失败"));
     } finally {
       setIsSending(false);
-    }
-  }
-
-  async function recordCheckResult(score: number) {
-    if (!checkQuestion) {
-      return;
-    }
-    setIsCheckSaving(true);
-    setStatus("记录验证中");
-    try {
-      const service = await createRuntimeLearningService();
-      const result = await service.recordQuiz({
-        domain,
-        topic: checkQuestion.topic,
-        score,
-      });
-      setLastEvidence(result.evidence);
-      setLastResult(result);
-      setStatus("已记录验证");
-      await refreshLoopStatus(domain);
-    } catch (error) {
-      setStatus(friendlyErrorMessage(error, "记录验证失败"));
-    } finally {
-      setIsCheckSaving(false);
     }
   }
 
@@ -1077,8 +1045,7 @@ export default function App() {
                     <h2 className="ink-title mt-7 text-3xl sm:text-4xl">今日，学些什么？</h2>
                     <p className="mt-3 text-sm text-[var(--color-muted)]">一问一答之间，画像随你生长</p>
                     <div className="mt-7 flex flex-wrap justify-center gap-2">
-                      <span className="ink-chip">书单 {readingListSummary.total}</span>
-                      <span className="ink-chip">画像 v{dashboardSummary.latestPortraitVersion ?? "—"}</span>
+                      <span className="ink-chip">资料 {readingListSummary.total}</span>
                       <span className="ink-chip">{domainLabel(domain, domainFolders)}</span>
                     </div>
                   </div>
@@ -1099,17 +1066,6 @@ export default function App() {
               </div>
 
               <div className="shrink-0 pt-3">
-                {checkQuestion ? (
-                  <div className="ink-card mb-3 border-l-2 border-l-[var(--color-accent)] p-4 text-sm">
-                    <div className="ink-eyebrow">检验一下</div>
-                    <div className="mt-2 leading-6 text-[var(--color-ink)]">{checkQuestion.prompt}</div>
-                    <div className="mt-3 flex gap-2">
-                      <button className="ink-btn ink-btn-ghost" disabled={isCheckSaving} onClick={() => recordCheckResult(0.4)} type="button">未掌握</button>
-                      <button className="ink-btn ink-btn-seal" disabled={isCheckSaving} onClick={() => recordCheckResult(0.85)} type="button">已掌握</button>
-                    </div>
-                  </div>
-                ) : null}
-
                 <div className="ink-card flex flex-col gap-2 p-2.5 shadow-[var(--shadow-float)] sm:flex-row sm:items-end">
                   <textarea
                     className="min-h-14 flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-6 outline-none placeholder:text-[var(--color-faint)]"
@@ -1127,7 +1083,7 @@ export default function App() {
           ) : workspaceView === "resources" ? (
             <div className="mx-auto flex h-full min-h-0 w-full max-w-[1280px] flex-col px-4 pb-4 sm:px-6 sm:pb-6">
               <div className="flex shrink-0 items-center justify-between gap-3 py-3">
-                <div className="hidden text-sm text-[var(--color-muted)] sm:block">书单与推荐，随画像生长</div>
+                <div className="hidden text-sm text-[var(--color-muted)] sm:block">资料链接与待读清单</div>
                 <div className="flex rounded-full border border-[var(--color-border)] bg-[var(--color-soft)] p-1">
                   {RESOURCE_MODE_OPTIONS.map((option) => (
                     <button
@@ -1207,15 +1163,15 @@ export default function App() {
                     </button>
                   </div>
                   <p className="mt-4 text-xs leading-5 text-[var(--color-faint)]">
-                    每个学习文件夹对应一个子 harness；对话、书单、画像和推荐会按文件夹隔离。
+                    对话、资料、画像和推荐会按学习文件夹隔离。
                     {domainFolderMessage ? ` ${domainFolderMessage}` : ""}
                   </p>
                 </section>
               </div>
 
               <section className="ink-card mt-4 p-5">
-                <div className="ink-eyebrow">建档</div>
-                <h2 className="ink-title mt-1.5 text-lg">冷启动建档</h2>
+                <div className="ink-eyebrow">偏好</div>
+                <h2 className="ink-title mt-1.5 text-lg">学习偏好</h2>
                 <div className="mt-4 grid gap-4 lg:grid-cols-3">
                   <label className="block text-xs font-medium text-[var(--color-muted)]">目标<input className="ink-field mt-2" onChange={(event) => setOnboardingGoal(event.target.value)} value={onboardingGoal} /></label>
                   <label className="block text-xs font-medium text-[var(--color-muted)]">兴趣方向<textarea className="ink-field mt-2 min-h-20 resize-none" onChange={(event) => setOnboardingInterests(event.target.value)} value={onboardingInterests} /></label>
@@ -1223,9 +1179,37 @@ export default function App() {
                 </div>
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <div className="text-xs text-[var(--color-faint)]">{onboardingMessage}</div>
-                  <button className="ink-btn ink-btn-seal" disabled={isOnboardingSaving} onClick={saveOnboardingProfile} type="button">{isOnboardingSaving ? "保存中…" : "保存建档"}</button>
+                  <button className="ink-btn ink-btn-seal" disabled={isOnboardingSaving} onClick={saveOnboardingProfile} type="button">{isOnboardingSaving ? "保存中…" : "保存偏好"}</button>
                 </div>
               </section>
+
+              <details className="ink-card mt-4 p-5">
+                <summary className="cursor-pointer text-sm font-medium text-[var(--color-muted)]">
+                  进阶视图
+                </summary>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <button
+                    className="ink-btn ink-btn-ghost justify-between px-4 py-3"
+                    onClick={() => setWorkspaceView("dashboard")}
+                    type="button"
+                  >
+                    <span>数据看板</span>
+                    <span className="text-xs text-[var(--color-faint)]">
+                      {dashboardSummary.totalResources} 份资料
+                    </span>
+                  </button>
+                  <button
+                    className="ink-btn ink-btn-ghost justify-between px-4 py-3"
+                    onClick={() => setWorkspaceView("portrait")}
+                    type="button"
+                  >
+                    <span>我的画像</span>
+                    <span className="text-xs text-[var(--color-faint)]">
+                      v{dashboardSummary.latestPortraitVersion ?? "—"}
+                    </span>
+                  </button>
+                </div>
+              </details>
 
               <section className="ink-card mt-4 p-5">
                 <div className="ink-eyebrow">足迹</div>

@@ -27,12 +27,30 @@ const SUMMARY_ITEMS = [
   { key: "later", label: "稍后" },
 ] as const;
 
+const KIND_LABELS: Record<string, string> = {
+  article: "文章",
+  video: "视频",
+  repo: "代码库",
+  doc: "文档",
+};
+
 function summaryValue(summary: ReadingListSummary, key: (typeof SUMMARY_ITEMS)[number]["key"]) {
   return key === "total" ? summary.total : summary.byStatus[key];
 }
 
 function itemKey(item: ReadingListViewItem): string {
   return item.id === null ? `${item.title}-${item.addedAt}` : String(item.id);
+}
+
+function formatAddedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+  });
 }
 
 export function ReadingListWorkspaceView({
@@ -47,10 +65,10 @@ export function ReadingListWorkspaceView({
 }: ReadingListWorkspaceViewProps) {
   return (
     <div className="flex-1 overflow-y-auto p-5">
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {SUMMARY_ITEMS.map((item) => (
           <div
-            className="rounded-md border border-[var(--color-border)] bg-white p-3"
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] p-3"
             key={item.key}
           >
             <div className="text-xs text-[var(--color-muted)]">{item.label}</div>
@@ -61,8 +79,8 @@ export function ReadingListWorkspaceView({
         ))}
       </div>
 
-      <div className="mt-3 flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white p-3 text-sm text-[var(--color-muted)]">
-        <div>已读停留 {summary.doneDwellSeconds}s · {isLoading ? "读取中" : message}</div>
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] p-3 text-sm text-[var(--color-muted)]">
+        <div className="truncate">{isLoading ? "读取中" : message}</div>
         <button
           className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-50"
           disabled={isLoading}
@@ -74,14 +92,14 @@ export function ReadingListWorkspaceView({
       </div>
 
       {items.length === 0 ? (
-        <div className="mt-4 rounded-md border border-[var(--color-border)] bg-white p-5 text-sm text-[var(--color-muted)]">
+        <div className="mt-4 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] p-5 text-sm text-[var(--color-muted)]">
           暂无待读资料
         </div>
       ) : (
-        <div className="mt-4 grid grid-cols-2 gap-4">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           {groups.map((group) => (
             <section
-              className="min-w-0 rounded-md border border-[var(--color-border)] bg-white"
+              className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)]"
               key={group.status}
             >
               <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
@@ -111,7 +129,7 @@ export function ReadingListWorkspaceView({
                           )}
                         </div>
                         <div className="mt-1 text-xs text-[var(--color-muted)]">
-                          {item.kind} · {item.addedAt}
+                          {KIND_LABELS[item.kind] ?? item.kind} · {formatAddedAt(item.addedAt)}
                         </div>
                       </div>
                       <div className="flex flex-wrap gap-2">
