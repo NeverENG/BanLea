@@ -7,6 +7,7 @@ import {
   groupReadingListItems,
   loadReadingList,
   loadReadingListOverview,
+  selectUnfinishedReadingListItems,
   summarizeReadingList,
 } from "@/features/reading-list";
 import type { ReadingListRepository } from "@/db/readingListRepo";
@@ -285,6 +286,43 @@ describe("reading-list feature", () => {
     expect(groups[0].label).toBe("待读");
     expect(groups[0].items.map((item) => item.title)).toEqual(["待读资料"]);
     expect(groups[3].items.map((item) => item.title)).toEqual(["已读资料"]);
+  });
+
+  it("为学习页预览筛选未完成资料", () => {
+    const items = [
+      {
+        id: 1,
+        title: "待读资料",
+        kind: "doc" as const,
+        status: "todo" as const,
+        url: "https://example.com/todo",
+        addedAt: "2026-06-09T08:00:00.000Z",
+      },
+      {
+        id: 2,
+        title: "已读资料",
+        kind: "article" as const,
+        status: "done" as const,
+        url: "https://example.com/done",
+        addedAt: "2026-06-09T08:01:00.000Z",
+      },
+      {
+        id: 3,
+        title: "阅读中资料",
+        kind: "video" as const,
+        status: "reading" as const,
+        url: null,
+        addedAt: "2026-06-09T08:02:00.000Z",
+      },
+    ];
+
+    expect(selectUnfinishedReadingListItems(items, 1).map((item) => item.title)).toEqual([
+      "待读资料",
+    ]);
+    expect(selectUnfinishedReadingListItems(items).map((item) => item.title)).toEqual([
+      "待读资料",
+      "阅读中资料",
+    ]);
   });
 
   it("更新书单状态并写回 reading evidence", async () => {
