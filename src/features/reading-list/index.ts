@@ -223,16 +223,6 @@ export function groupReadingListItems(
   }));
 }
 
-export function selectUnfinishedReadingListItems(
-  items: ReadingListViewItem[],
-  limit?: number,
-): ReadingListViewItem[] {
-  return limitItems(
-    items.filter((item) => item.status !== "done"),
-    limit,
-  );
-}
-
 function sourceIdForSuggestion(
   suggestion: TutorResourceSuggestion,
   index: number,

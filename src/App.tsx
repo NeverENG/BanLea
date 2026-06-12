@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createGitHubResourceSource } from "@/core/sources";
 import {
   getDomainRepository,
@@ -64,7 +64,6 @@ import {
   buildManualReadingListItemInput,
   changeReadingListItemStatus,
   groupReadingListItems,
-  selectUnfinishedReadingListItems,
   type ManualReadingListDraft,
   type ReadingListGroup,
   type ReadingListSummary,
@@ -137,21 +136,6 @@ const WORKSPACE_VIEW_META: Record<WorkspaceView, { eyebrow: string; title: strin
 };
 
 const FEED_CLICK_DWELL_SECONDS = 60;
-const TUTOR_RESOURCE_PREVIEW_LIMIT = 3;
-
-const READING_STATUS_PREVIEW_LABELS: Record<ReadingListStatus, string> = {
-  todo: "待读",
-  reading: "阅读中",
-  later: "稍后",
-  done: "已读",
-};
-
-const READING_KIND_PREVIEW_LABELS: Record<string, string> = {
-  article: "文章",
-  video: "视频",
-  repo: "代码",
-  doc: "资料",
-};
 
 const EMPTY_READING_SUMMARY: ReadingListSummary = {
   total: 0,
@@ -237,132 +221,6 @@ function mergeDomainFolders(folders: DomainRecord[]): DomainRecord[] {
     seen.add(folder.id);
     return true;
   });
-}
-
-function readingPreviewKey(item: ReadingListViewItem): string {
-  return item.id === null ? `${item.title}-${item.addedAt}` : String(item.id);
-}
-
-function TutorResourceShelf({
-  isAddingResource,
-  items,
-  message,
-  onAddResource,
-  total,
-  onOpenResources,
-}: {
-  isAddingResource: boolean;
-  items: ReadingListViewItem[];
-  message: string;
-  onAddResource: (input: ManualReadingListDraft) => Promise<boolean>;
-  total: number;
-  onOpenResources: () => void;
-}) {
-  const [resourceUrl, setResourceUrl] = useState("");
-  const hiddenCount = Math.max(0, total - items.length);
-  const visibleMessage = message === "未操作" ? "" : message;
-
-  async function submitResource(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const saved = await onAddResource({ url: resourceUrl });
-    if (saved) {
-      setResourceUrl("");
-    }
-  }
-
-  return (
-    <section className="ink-card mb-3 p-3 shadow-[var(--shadow-card)]">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="ink-eyebrow">相关资料</div>
-          <div className="mt-1 truncate text-xs text-[var(--color-muted)]">
-            当前文件夹内的资料链接
-          </div>
-        </div>
-        <button
-          className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs text-[var(--color-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
-          onClick={onOpenResources}
-          type="button"
-        >
-          {items.length === 0 ? "打开书单" : "查看全部"}
-        </button>
-      </div>
-
-      {items.length === 0 ? (
-        <div className="mt-3 rounded-md border border-dashed border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-faint)]">
-          暂无资料链接
-        </div>
-      ) : (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-          {items.map((item) => {
-            const content = (
-              <>
-                <div className="truncate text-sm font-medium text-[var(--color-ink)]">
-                  {item.title}
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-[var(--color-muted)]">
-                  <span>{READING_STATUS_PREVIEW_LABELS[item.status]}</span>
-                  <span>{READING_KIND_PREVIEW_LABELS[item.kind] ?? item.kind}</span>
-                </div>
-              </>
-            );
-
-            return item.url ? (
-              <a
-                className="min-w-[12rem] max-w-[16rem] flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] px-3 py-2 text-left transition hover:border-[var(--color-border-strong)]"
-                href={item.url}
-                key={readingPreviewKey(item)}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {content}
-              </a>
-            ) : (
-              <div
-                className="min-w-[12rem] max-w-[16rem] flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] px-3 py-2 text-left"
-                key={readingPreviewKey(item)}
-              >
-                {content}
-              </div>
-            );
-          })}
-          {hiddenCount > 0 ? (
-            <button
-              className="min-w-[6rem] rounded-md border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-muted)] transition hover:border-[var(--color-border-strong)] hover:text-[var(--color-ink)]"
-              onClick={onOpenResources}
-              type="button"
-            >
-              +{hiddenCount} 条
-            </button>
-          ) : null}
-        </div>
-      )}
-
-      <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submitResource}>
-        <input
-          className="ink-field min-h-[2.25rem] flex-1 py-1.5 text-xs"
-          onChange={(event) => setResourceUrl(event.target.value)}
-          placeholder="贴一个资料链接"
-          value={resourceUrl}
-        />
-        <button
-          className="rounded-md bg-[var(--color-ink-strong)] px-3 py-1.5 text-xs text-[var(--color-canvas)] transition hover:bg-[var(--color-accent)] disabled:opacity-40"
-          disabled={isAddingResource || !resourceUrl.trim()}
-          type="submit"
-        >
-          {isAddingResource ? "添加中…" : "添加"}
-        </button>
-      </form>
-      {visibleMessage ? (
-        <div
-          aria-live="polite"
-          className="mt-2 truncate text-xs text-[var(--color-faint)]"
-        >
-          {visibleMessage}
-        </div>
-      ) : null}
-    </section>
-  );
 }
 
 function readPreviewDomainFolders(): DomainRecord[] {
@@ -521,23 +379,6 @@ export default function App() {
     () => createResourceSourceSettingsService(),
     [],
   );
-  const unfinishedReadingListItems = useMemo(
-    () => selectUnfinishedReadingListItems(readingListItems),
-    [readingListItems],
-  );
-  const tutorResourcePreviewItems = useMemo(
-    () =>
-      selectUnfinishedReadingListItems(
-        readingListItems,
-        TUTOR_RESOURCE_PREVIEW_LIMIT,
-      ),
-    [readingListItems],
-  );
-
-  function openReadingListWorkspace() {
-    setWorkspaceView("resources");
-    setResourceMode("reading");
-  }
 
   function applyDomainLearningSnapshot(snapshot: DomainLearningSnapshot) {
     setDomainSnapshot(snapshot);
@@ -1326,14 +1167,6 @@ export default function App() {
               </div>
 
               <div className="shrink-0 pt-3">
-                <TutorResourceShelf
-                  isAddingResource={isManualResourceSaving}
-                  items={tutorResourcePreviewItems}
-                  message={readingListMessage}
-                  onAddResource={addManualResource}
-                  onOpenResources={openReadingListWorkspace}
-                  total={unfinishedReadingListItems.length}
-                />
                 <div className="ink-card flex flex-col gap-2 p-2.5 shadow-[var(--shadow-float)] sm:flex-row sm:items-end">
                   <textarea
                     className="min-h-14 flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-sm leading-6 outline-none placeholder:text-[var(--color-faint)]"
