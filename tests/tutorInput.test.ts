@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTutorInputService } from "@/features/tutor";
+import { createLocalTutorReply, createTutorInputService } from "@/features/tutor";
 import type { LearningEventResult } from "@/features/events";
 import type { TutorPromptContext } from "@/features/tutor";
 import type { Evidence } from "@/types/evidence";
@@ -161,6 +161,35 @@ describe("createTutorInputService", () => {
       topic: "service mesh",
       prompt: "service mesh 解决什么问题？",
     });
+  });
+
+  it("本地回复会引用当前资料上下文", () => {
+    const promptContext: TutorPromptContext = {
+      domain: "computer_science",
+      global: null,
+      domainPortrait: null,
+      readingList: [
+        {
+          title: "Kubernetes 官方文档",
+          url: "https://kubernetes.io/docs/",
+          kind: "doc",
+          status: "todo",
+          addedAt: "2026-06-12T12:00:00.000Z",
+        },
+      ],
+      systemContext: "reading_resources:",
+    };
+
+    const reply = createLocalTutorReply({
+      domain: "computer_science",
+      content: "帮我入门 k8s",
+      learning: result(evidence()),
+      promptContext,
+    });
+
+    expect(reply).toContain("状态");
+    expect(reply).toContain("Kubernetes 官方文档");
+    expect(reply).toContain("https://kubernetes.io/docs/");
   });
 
   it("空消息不会写入 evidence", async () => {

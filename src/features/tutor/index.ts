@@ -185,11 +185,23 @@ export function formatTutorReplySections(sections: TutorReplySections): string {
   return blocks.map(([title, body]) => `${title}\n${body}`).join("\n\n");
 }
 
+function localResourceStatusNote(
+  context: TutorPromptContext | null,
+): string | undefined {
+  const resource = context?.readingList.find((item) => item.status !== "done");
+  if (!resource) {
+    return undefined;
+  }
+  const url = resource.url ? `：${resource.url}` : "";
+  return `可先配合资料《${resource.title}》${url}。`;
+}
+
 export function createLocalTutorReply(input: TutorReplyInput): string {
   return formatTutorReplySections({
     plan: "先把问题拆成核心概念、最小可运行例子和一个验证动作；学完后用自己的话复述一遍。",
     explanation: assistantReplyContent(input.learning),
     checkQuestion: `请先回答：关于“${input.content}”，你现在最不确定的是定义、工作流程，还是实际应用？`,
+    statusNote: localResourceStatusNote(input.promptContext),
   });
 }
 
