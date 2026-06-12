@@ -106,7 +106,12 @@ async function createMessage(
   return (await response.json()) as MessageResponse;
 }
 
-function parseSseEvent(raw: string): { event: string | null; data: string } | null {
+interface SseEvent {
+  event: string | null;
+  data: string;
+}
+
+function parseSseEvent(raw: string): SseEvent | null {
   const lines = raw.split(/\r?\n/);
   let event: string | null = null;
   const data: string[] = [];
@@ -126,10 +131,70 @@ function parseSseEvent(raw: string): { event: string | null; data: string } | nu
   return { event, data: data.join("\n") };
 }
 
+function nextSseSeparator(buffer: string): { index: number; length: number } | null {
+  const lfIndex = buffer.indexOf("\n\n");
+  const crlfIndex = buffer.indexOf("\r\n\r\n");
+
+  if (lfIndex < 0 && crlfIndex < 0) {
+    return null;
+  }
+  if (lfIndex < 0) {
+    return { index: crlfIndex, length: 4 };
+  }
+  if (crlfIndex < 0) {
+    return { index: lfIndex, length: 2 };
+  }
+  return crlfIndex < lfIndex
+    ? { index: crlfIndex, length: 4 }
+    : { index: lfIndex, length: 2 };
+}
+
+function consumeSseEvents(
+  buffer: string,
+  onEvent: (event: SseEvent) => void,
+  flush = false,
+): string {
+  let nextBuffer = buffer;
+  let separator = nextSseSeparator(nextBuffer);
+
+  while (separator) {
+    const rawEvent = nextBuffer.slice(0, separator.index);
+    nextBuffer = nextBuffer.slice(separator.index + separator.length);
+
+    const event = parseSseEvent(rawEvent);
+    if (event) {
+      onEvent(event);
+    }
+
+    separator = nextSseSeparator(nextBuffer);
+  }
+
+  if (flush && nextBuffer.trim()) {
+    const event = parseSseEvent(nextBuffer);
+    if (event) {
+      onEvent(event);
+    }
+    return "";
+  }
+
+  return nextBuffer;
+}
+
+function tryParseJson<T>(data: string): T | null {
+  try {
+    return JSON.parse(data) as T;
+  } catch {
+    return null;
+  }
+}
+
 function textDeltaFromEvent(data: string): string | null {
-  const parsed = JSON.parse(data) as {
+  const parsed = tryParseJson<{
     delta?: { type?: string; text?: string };
-  };
+  }>(data);
+  if (!parsed) {
+    return null;
+  }
   if (parsed.delta?.type === "text_delta" && typeof parsed.delta.text === "string") {
     return parsed.delta.text;
   }
@@ -158,6 +223,15 @@ async function streamMessage(
   const reader = response.body.getReader();
   let buffer = "";
   let text = "";
+  const handleEvent = (event: SseEvent) => {
+    if (event.event === "content_block_delta") {
+      const delta = textDeltaFromEvent(event.data);
+      if (delta) {
+        text += delta;
+        textCallbacks.forEach((callback) => callback(delta));
+      }
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -166,23 +240,9 @@ async function streamMessage(
     }
 
     buffer += decoder.decode(value, { stream: true });
-    let separatorIndex = buffer.indexOf("\n\n");
-    while (separatorIndex >= 0) {
-      const rawEvent = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
-
-      const event = parseSseEvent(rawEvent);
-      if (event?.event === "content_block_delta") {
-        const delta = textDeltaFromEvent(event.data);
-        if (delta) {
-          text += delta;
-          textCallbacks.forEach((callback) => callback(delta));
-        }
-      }
-
-      separatorIndex = buffer.indexOf("\n\n");
-    }
+    buffer = consumeSseEvents(buffer, handleEvent);
   }
+  consumeSseEvents(buffer, handleEvent, true);
 
   return {
     content: text ? [{ type: "text", text }] : [],
@@ -293,13 +353,16 @@ function deepSeekTextDelta(data: string): string | null {
   if (data === "[DONE]") {
     return null;
   }
-  const parsed = JSON.parse(data) as {
+  const parsed = tryParseJson<{
     choices?: Array<{
       delta?: {
         content?: string;
       };
     }>;
-  };
+  }>(data);
+  if (!parsed) {
+    return null;
+  }
   return parsed.choices?.[0]?.delta?.content ?? null;
 }
 
@@ -330,6 +393,15 @@ async function streamDeepSeekMessage(
   const reader = response.body.getReader();
   let buffer = "";
   let text = "";
+  const handleEvent = (event: SseEvent) => {
+    if (event.data) {
+      const delta = deepSeekTextDelta(event.data);
+      if (delta) {
+        text += delta;
+        textCallbacks.forEach((callback) => callback(delta));
+      }
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -338,23 +410,9 @@ async function streamDeepSeekMessage(
     }
 
     buffer += decoder.decode(value, { stream: true });
-    let separatorIndex = buffer.indexOf("\n\n");
-    while (separatorIndex >= 0) {
-      const rawEvent = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
-
-      const event = parseSseEvent(rawEvent);
-      if (event?.data) {
-        const delta = deepSeekTextDelta(event.data);
-        if (delta) {
-          text += delta;
-          textCallbacks.forEach((callback) => callback(delta));
-        }
-      }
-
-      separatorIndex = buffer.indexOf("\n\n");
-    }
+    buffer = consumeSseEvents(buffer, handleEvent);
   }
+  consumeSseEvents(buffer, handleEvent, true);
 
   return {
     content: text ? [{ type: "text", text }] : [],

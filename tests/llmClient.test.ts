@@ -157,4 +157,84 @@ describe("llm client", () => {
       }),
     );
   });
+
+  it("messages.stream 会处理没有结尾空行的 SSE 事件", async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            [
+              "event: content_block_delta",
+              'data: {"delta":{"type":"text_delta","text":"tail"}}',
+            ].join("\n"),
+          ),
+        );
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(body, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    initClient("sk-ant-test");
+    const deltas: string[] = [];
+    const stream = getClient().messages.stream({
+      model: "claude-haiku-4-5",
+      max_tokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    stream.on("text", (delta) => deltas.push(delta));
+
+    const final = await stream.finalMessage();
+
+    expect(deltas).toEqual(["tail"]);
+    expect(final.content).toEqual([{ type: "text", text: "tail" }]);
+  });
+
+  it("DeepSeek stream 忽略非 JSON SSE 并聚合文本", async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            [
+              "data: {not-json}",
+              "",
+              'data: {"choices":[{"delta":{"content":"deep"}}]}',
+              "",
+              'data: {"choices":[{"delta":{"content":"seek"}}]}',
+            ].join("\n"),
+          ),
+        );
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async () => new Response(body, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    initClient("sk-ds-test", "deepseek");
+    const deltas: string[] = [];
+    const stream = getClient().messages.stream({
+      model: modelForTier("light"),
+      max_tokens: 32,
+      messages: [{ role: "user", content: "hello" }],
+    });
+    stream.on("text", (delta) => deltas.push(delta));
+
+    const final = await stream.finalMessage();
+
+    expect(deltas).toEqual(["deep", "seek"]);
+    expect(final.content).toEqual([{ type: "text", text: "deepseek" }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.deepseek.com/chat/completions",
+      expect.objectContaining({
+        body: JSON.stringify({
+          model: "deepseek-v4-flash",
+          max_tokens: 32,
+          messages: [{ role: "user", content: "hello" }],
+          stream: true,
+        }),
+      }),
+    );
+  });
 });

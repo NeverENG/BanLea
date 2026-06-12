@@ -104,4 +104,7 @@ BanLea App Shell
   - `light` → `deepseek-v4-flash`；
   - `deep` → `deepseek-v4-pro`。
 - API Key settings service 调整为保存后立即初始化当前 provider，调用方不再需要额外读取 keychain 才能使用刚保存的 key。
+- LLM 流式 SSE 解析加固：
+  - 支持没有结尾空行的最后一个 SSE 事件；
+  - DeepSeek 流式遇到非 JSON 事件时忽略该事件，不中断已收到的文本聚合。
 - 当前 DeepSeek 只用于提问式对话回复；画像 live update / structured output 仍限定 Claude，避免把非等价结构化能力混入 harness 更新链路。
