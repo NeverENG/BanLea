@@ -246,18 +246,21 @@ function readingPreviewKey(item: ReadingListViewItem): string {
 function TutorResourceShelf({
   isAddingResource,
   items,
+  message,
   onAddResource,
   total,
   onOpenResources,
 }: {
   isAddingResource: boolean;
   items: ReadingListViewItem[];
+  message: string;
   onAddResource: (input: ManualReadingListDraft) => Promise<boolean>;
   total: number;
   onOpenResources: () => void;
 }) {
   const [resourceUrl, setResourceUrl] = useState("");
   const hiddenCount = Math.max(0, total - items.length);
+  const visibleMessage = message === "未操作" ? "" : message;
 
   async function submitResource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -350,6 +353,14 @@ function TutorResourceShelf({
           {isAddingResource ? "添加中…" : "添加"}
         </button>
       </form>
+      {visibleMessage ? (
+        <div
+          aria-live="polite"
+          className="mt-2 truncate text-xs text-[var(--color-faint)]"
+        >
+          {visibleMessage}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1318,6 +1329,7 @@ export default function App() {
                 <TutorResourceShelf
                   isAddingResource={isManualResourceSaving}
                   items={tutorResourcePreviewItems}
+                  message={readingListMessage}
                   onAddResource={addManualResource}
                   onOpenResources={openReadingListWorkspace}
                   total={unfinishedReadingListItems.length}
