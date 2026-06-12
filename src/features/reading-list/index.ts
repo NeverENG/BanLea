@@ -162,6 +162,30 @@ function titleFromUrl(url: string): string {
   return `${parsed.hostname}${path}`;
 }
 
+function inferReadingListKindFromUrl(url: string): ReadingListKind {
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.toLowerCase();
+  const pathname = parsed.pathname.toLowerCase();
+
+  if (hostname === "github.com" || hostname.endsWith(".github.com")) {
+    return "repo";
+  }
+
+  if (
+    hostname === "youtu.be" ||
+    hostname.endsWith("youtube.com") ||
+    hostname.endsWith("bilibili.com")
+  ) {
+    return "video";
+  }
+
+  if (/\/(article|blog|post|posts)\//.test(pathname)) {
+    return "article";
+  }
+
+  return "doc";
+}
+
 function emptyStatusCounts(): ReadingListStatusCounts {
   return {
     todo: 0,
@@ -284,7 +308,7 @@ export function buildManualReadingListItemInput({
     sourceId: `manual:${addedAt}`,
     title: normalizedTitle,
     url: normalizedUrl,
-    kind: kind ?? "doc",
+    kind: kind ?? inferReadingListKindFromUrl(normalizedUrl),
     status: status ?? "todo",
     addedAt,
   };

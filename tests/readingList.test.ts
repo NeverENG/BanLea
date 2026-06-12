@@ -78,6 +78,32 @@ describe("reading-list feature", () => {
     ).toThrow("资料链接只支持 http 或 https");
   });
 
+  it("手动资料会按链接推断资料类型", () => {
+    const addedAt = "2026-06-11T12:00:00.000Z";
+
+    expect(
+      buildManualReadingListItemInput({
+        domain: "computer_science",
+        url: "https://github.com/kubernetes/kubernetes",
+        addedAt,
+      }).kind,
+    ).toBe("repo");
+    expect(
+      buildManualReadingListItemInput({
+        domain: "computer_science",
+        url: "https://www.youtube.com/watch?v=abc",
+        addedAt,
+      }).kind,
+    ).toBe("video");
+    expect(
+      buildManualReadingListItemInput({
+        domain: "computer_science",
+        url: "https://example.com/blog/k8s-intro",
+        addedAt,
+      }).kind,
+    ).toBe("article");
+  });
+
   it("把手动资料链接写入待读书单", async () => {
     const repo = repository();
 

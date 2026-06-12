@@ -76,6 +76,7 @@ BanLea App Shell
   - 用户可粘贴资料链接，标题可选；
   - 未带协议的链接会按 `https://` 处理；
   - 未填写标题时从 URL 域名和路径推断标题；
+  - 未显式指定类型时按链接自动推断：GitHub 为代码，YouTube/Bilibili 为视频，文章路径为文章，其余为资料；
   - 新资料默认进入当前学习文件夹的待读清单。
 - 桌面端写入 SQLite `reading_list` 表，`source_id` 使用 `manual:<addedAt>`，继续沿用现有 `domain_id` 隔离。
 - 浏览器预览没有 Tauri SQL 时，会临时追加到当前页面，便于开发期直接验收。
