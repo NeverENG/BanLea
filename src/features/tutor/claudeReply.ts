@@ -48,7 +48,7 @@ function buildSystemPrompt(context: TutorPromptContext | null): string {
     "- 画像上下文只能作为弱信号；低置信或缺失信息不要当成确定事实。",
     "- 回复要短而完整，优先给出下一步可做的练习或验证问题。",
     "",
-    "画像上下文：",
+    "画像与资料上下文：",
     portraitContext,
   ].join("\n");
 }

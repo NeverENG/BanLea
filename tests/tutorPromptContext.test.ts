@@ -4,7 +4,9 @@ import type {
   PortraitRepository,
   PortraitVersionRecord,
 } from "@/db/portraitRepo";
+import type { ReadingListRepository } from "@/db/readingListRepo";
 import type { Portrait } from "@/types/portrait";
+import type { ReadingListItem } from "@/types/readingList";
 
 function portrait(overrides: Partial<Portrait> = {}): Portrait {
   return {
@@ -60,6 +62,16 @@ function repository(records: PortraitVersionRecord[]): PortraitRepository {
     getByVersion: vi.fn(),
     listByDomain: vi.fn(),
     nextVersion: vi.fn(),
+  };
+}
+
+function readingRepository(
+  rows: ReadingListItem[],
+): Pick<ReadingListRepository, "listByDomain"> {
+  return {
+    listByDomain: vi.fn(async (domainId: string) =>
+      rows.filter((item) => item.domain === domainId),
+    ),
   };
 }
 
@@ -120,5 +132,70 @@ describe("loadTutorPromptContext", () => {
     expect(context.systemContext).toContain("domain_portrait: 暂无画像");
     expect(repo.getLatest).toHaveBeenCalledTimes(1);
     expect(repo.getLatest).toHaveBeenCalledWith("global");
+  });
+
+  it("注入当前 domain 的未完成资料链接", async () => {
+    const portraits = repository([]);
+    const readingList = readingRepository([
+      {
+        id: 1,
+        domain: "computer_science",
+        sourceId: "manual:1",
+        title: "Kubernetes 官方文档",
+        url: "https://kubernetes.io/docs/",
+        kind: "doc",
+        status: "todo",
+        addedAt: "2026-06-11T12:00:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+      {
+        id: 2,
+        domain: "computer_science",
+        sourceId: "manual:2",
+        title: "已读资料",
+        url: "https://example.com/done",
+        kind: "article",
+        status: "done",
+        addedAt: "2026-06-11T12:01:00.000Z",
+        readAt: "2026-06-11T12:30:00.000Z",
+        dwellSeconds: 60,
+      },
+      {
+        id: 3,
+        domain: "physics",
+        sourceId: "manual:3",
+        title: "物理资料",
+        url: "https://example.com/physics",
+        kind: "doc",
+        status: "todo",
+        addedAt: "2026-06-11T12:02:00.000Z",
+        readAt: null,
+        dwellSeconds: 0,
+      },
+    ]);
+
+    const context = await loadTutorPromptContext({
+      domain: "computer_science",
+      portraits,
+      readingList,
+    });
+
+    expect(context.readingList).toEqual([
+      {
+        title: "Kubernetes 官方文档",
+        url: "https://kubernetes.io/docs/",
+        kind: "doc",
+        status: "todo",
+        addedAt: "2026-06-11T12:00:00.000Z",
+      },
+    ]);
+    expect(context.systemContext).toContain("reading_resources:");
+    expect(context.systemContext).toContain(
+      "- [todo/doc] Kubernetes 官方文档 url=https://kubernetes.io/docs/",
+    );
+    expect(context.systemContext).not.toContain("已读资料");
+    expect(context.systemContext).not.toContain("物理资料");
+    expect(readingList.listByDomain).toHaveBeenCalledWith("computer_science");
   });
 });

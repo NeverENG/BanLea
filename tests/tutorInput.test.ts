@@ -88,6 +88,7 @@ describe("createTutorInputService", () => {
       domain: "computer_science",
       global: null,
       domainPortrait: null,
+      readingList: [],
       systemContext: "domain: computer_science\nstyle: direct",
     };
     const promptContextProvider = vi.fn(async () => promptContext);

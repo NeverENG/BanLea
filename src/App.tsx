@@ -765,6 +765,7 @@ export default function App() {
           loadTutorPromptContext({
             domain: targetDomain,
             portraits: portraitRepository,
+            readingList: readingListRepository,
           }),
         replyGenerator,
         resourceSuggestionProvider,

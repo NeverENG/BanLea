@@ -80,3 +80,11 @@ BanLea App Shell
 - 桌面端写入 SQLite `reading_list` 表，`source_id` 使用 `manual:<addedAt>`，继续沿用现有 `domain_id` 隔离。
 - 浏览器预览没有 Tauri SQL 时，会临时追加到当前页面，便于开发期直接验收。
 - 当前增量只保存 URL 和标题，不新增备注字段，避免为低确定性信息改动迁移结构。
+
+## 资料上下文注入对话（2026-06-12）
+- Tutor prompt context 增加 `reading_resources` 段，注入当前学习文件夹的未完成资料。
+- 注入范围：
+  - 只读取当前 `domain_id`；
+  - 排除 `done` 资料，避免已读项长期干扰；
+  - 默认最多注入 6 条，控制 prompt 噪声。
+- 当前只注入标题、URL、类型和状态，不抓取网页正文；后续资料解析可以独立做，不阻塞主对话链路。

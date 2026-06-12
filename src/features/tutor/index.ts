@@ -1,6 +1,11 @@
 import type { LearningEventResult, LearningEventService } from "@/features/events";
 import type { PortraitRepository, PortraitVersionRecord } from "@/db/portraitRepo";
-import type { ReadingListKind } from "@/types/readingList";
+import type { ReadingListRepository } from "@/db/readingListRepo";
+import type {
+  ReadingListItem,
+  ReadingListKind,
+  ReadingListStatus,
+} from "@/types/readingList";
 import type { DimensionValue, PortraitScope } from "@/types/portrait";
 
 export interface TutorMessage {
@@ -44,7 +49,9 @@ export interface TutorInputService {
 export interface TutorPromptContextOptions {
   domain: string;
   portraits: PortraitRepository;
+  readingList?: Pick<ReadingListRepository, "listByDomain">;
   maxDimensionsPerPortrait?: number;
+  maxReadingListItems?: number;
   minConfidence?: number;
 }
 
@@ -67,10 +74,19 @@ export interface TutorPromptPortraitSnapshot {
   dimensions: TutorPromptDimension[];
 }
 
+export interface TutorPromptResource {
+  title: string;
+  url: string | null;
+  kind: ReadingListKind;
+  status: ReadingListStatus;
+  addedAt: string;
+}
+
 export interface TutorPromptContext {
   domain: string;
   global: TutorPromptPortraitSnapshot | null;
   domainPortrait: TutorPromptPortraitSnapshot | null;
+  readingList: TutorPromptResource[];
   systemContext: string;
 }
 
@@ -263,16 +279,44 @@ function formatPortraitSnapshot(
     .join("\n");
 }
 
+function readingListItemToPromptResource(
+  item: ReadingListItem,
+): TutorPromptResource {
+  return {
+    title: item.title,
+    url: item.url,
+    kind: item.kind,
+    status: item.status,
+    addedAt: item.addedAt,
+  };
+}
+
+function formatPromptResource(item: TutorPromptResource): string {
+  const url = item.url ? ` url=${item.url}` : "";
+  return `- [${item.status}/${item.kind}] ${item.title}${url}`;
+}
+
+function formatReadingListContext(items: TutorPromptResource[]): string {
+  if (items.length === 0) {
+    return "reading_resources: 暂无资料";
+  }
+  return ["reading_resources:", ...items.map(formatPromptResource)].join("\n");
+}
+
 export async function loadTutorPromptContext(
   options: TutorPromptContextOptions,
 ): Promise<TutorPromptContext> {
   const maxDimensions = options.maxDimensionsPerPortrait ?? 8;
+  const maxReadingListItems = options.maxReadingListItems ?? 6;
   const minConfidence = options.minConfidence ?? 0.35;
-  const [globalRecord, domainRecord] = await Promise.all([
+  const [globalRecord, domainRecord, readingRows] = await Promise.all([
     options.portraits.getLatest("global"),
     options.domain === "global"
       ? Promise.resolve(null)
       : options.portraits.getLatest(options.domain),
+    options.readingList
+      ? options.readingList.listByDomain(options.domain)
+      : Promise.resolve([]),
   ]);
   const global = globalRecord
     ? snapshotFromRecord(globalRecord, maxDimensions, minConfidence)
@@ -280,16 +324,22 @@ export async function loadTutorPromptContext(
   const domainPortrait = domainRecord
     ? snapshotFromRecord(domainRecord, maxDimensions, minConfidence)
     : null;
+  const readingList = readingRows
+    .filter((item) => item.status !== "done")
+    .slice(0, maxReadingListItems)
+    .map(readingListItemToPromptResource);
   const systemContext = [
     `domain: ${options.domain}`,
     formatPortraitSnapshot("global_portrait", global),
     formatPortraitSnapshot("domain_portrait", domainPortrait),
+    formatReadingListContext(readingList),
   ].join("\n\n");
 
   return {
     domain: options.domain,
     global,
     domainPortrait,
+    readingList,
     systemContext,
   };
 }

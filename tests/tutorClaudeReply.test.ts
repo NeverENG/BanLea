@@ -38,6 +38,7 @@ function promptContext(): TutorPromptContext {
     domain: "computer_science",
     global: null,
     domainPortrait: null,
+    readingList: [],
     systemContext: "domain: computer_science\ncommunication_style: 直接、结构化",
   };
 }
