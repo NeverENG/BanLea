@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { createGitHubResourceSource } from "@/core/sources";
 import {
   getDomainRepository,
@@ -244,15 +244,28 @@ function readingPreviewKey(item: ReadingListViewItem): string {
 }
 
 function TutorResourceShelf({
+  isAddingResource,
   items,
+  onAddResource,
   total,
   onOpenResources,
 }: {
+  isAddingResource: boolean;
   items: ReadingListViewItem[];
+  onAddResource: (input: ManualReadingListDraft) => Promise<boolean>;
   total: number;
   onOpenResources: () => void;
 }) {
+  const [resourceUrl, setResourceUrl] = useState("");
   const hiddenCount = Math.max(0, total - items.length);
+
+  async function submitResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const saved = await onAddResource({ url: resourceUrl });
+    if (saved) {
+      setResourceUrl("");
+    }
+  }
 
   return (
     <section className="ink-card mb-3 p-3 shadow-[var(--shadow-card)]">
@@ -268,7 +281,7 @@ function TutorResourceShelf({
           onClick={onOpenResources}
           type="button"
         >
-          {items.length === 0 ? "添加资料" : "查看全部"}
+          {items.length === 0 ? "打开书单" : "查看全部"}
         </button>
       </div>
 
@@ -321,6 +334,22 @@ function TutorResourceShelf({
           ) : null}
         </div>
       )}
+
+      <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={submitResource}>
+        <input
+          className="ink-field min-h-[2.25rem] flex-1 py-1.5 text-xs"
+          onChange={(event) => setResourceUrl(event.target.value)}
+          placeholder="贴一个资料链接"
+          value={resourceUrl}
+        />
+        <button
+          className="rounded-md bg-[var(--color-ink-strong)] px-3 py-1.5 text-xs text-[var(--color-canvas)] transition hover:bg-[var(--color-accent)] disabled:opacity-40"
+          disabled={isAddingResource || !resourceUrl.trim()}
+          type="submit"
+        >
+          {isAddingResource ? "添加中…" : "添加"}
+        </button>
+      </form>
     </section>
   );
 }
@@ -1287,7 +1316,9 @@ export default function App() {
 
               <div className="shrink-0 pt-3">
                 <TutorResourceShelf
+                  isAddingResource={isManualResourceSaving}
                   items={tutorResourcePreviewItems}
+                  onAddResource={addManualResource}
                   onOpenResources={openReadingListWorkspace}
                   total={unfinishedReadingListItems.length}
                 />
