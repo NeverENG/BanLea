@@ -88,3 +88,13 @@ BanLea App Shell
   - 排除 `done` 资料，避免已读项长期干扰；
   - 默认最多注入 6 条，控制 prompt 噪声。
 - 当前只注入标题、URL、类型和状态，不抓取网页正文；后续资料解析可以独立做，不阻塞主对话链路。
+
+## DeepSeek 对话适配（2026-06-12）
+- API Key 设置增加 Provider 切换：Claude / DeepSeek。
+- Keychain 按 provider 分开存储：
+  - Claude 使用 `anthropic_api_key`；
+  - DeepSeek 使用 `deepseek_api_key`。
+- LLM client 增加 DeepSeek OpenAI-compatible `/chat/completions` 适配：
+  - `light` → `deepseek-v4-flash`；
+  - `deep` → `deepseek-v4-pro`。
+- 当前 DeepSeek 只用于提问式对话回复；画像 live update / structured output 仍限定 Claude，避免把非等价结构化能力混入 harness 更新链路。

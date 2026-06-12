@@ -1,12 +1,21 @@
-import { deleteApiKey, getApiKey, saveApiKey } from "@/core/llm/apiKey";
+import {
+  deleteApiKey,
+  getApiKey,
+  saveApiKey,
+  type ApiKeyProvider,
+} from "@/core/llm/apiKey";
+import type { LlmProvider } from "@/core/llm/client";
+
+export type ApiProvider = ApiKeyProvider;
 
 export interface ApiKeyStore {
-  get(): Promise<string | null>;
-  save(key: string): Promise<void>;
-  delete(): Promise<void>;
+  get(provider: ApiProvider): Promise<string | null>;
+  save(key: string, provider: ApiProvider): Promise<void>;
+  delete(provider: ApiProvider): Promise<void>;
 }
 
 export interface ApiKeyStatus {
+  provider: ApiProvider;
   configured: boolean;
   maskedKey: string | null;
 }
@@ -16,10 +25,10 @@ export interface ApiKeyRuntimeStatus extends ApiKeyStatus {
 }
 
 export interface ApiKeySettingsService {
-  loadStatus(): Promise<ApiKeyStatus>;
-  initializeSavedKey(): Promise<ApiKeyRuntimeStatus>;
-  save(key: string): Promise<ApiKeyStatus>;
-  delete(): Promise<ApiKeyStatus>;
+  loadStatus(provider?: ApiProvider): Promise<ApiKeyStatus>;
+  initializeSavedKey(provider?: ApiProvider): Promise<ApiKeyRuntimeStatus>;
+  save(key: string, provider?: ApiProvider): Promise<ApiKeyStatus>;
+  delete(provider?: ApiProvider): Promise<ApiKeyStatus>;
 }
 
 const keychainStore: ApiKeyStore = {
@@ -35,22 +44,31 @@ export function maskApiKey(key: string): string {
   return `${key.slice(0, 7)}…${key.slice(-4)}`;
 }
 
-async function initializeClaudeClient(key: string | null): Promise<boolean> {
+export const API_PROVIDER_LABELS: Record<ApiProvider, string> = {
+  claude: "Claude",
+  deepseek: "DeepSeek",
+};
+
+async function initializeLlmClient(
+  key: string | null,
+  provider: ApiProvider,
+): Promise<boolean> {
   if (!key) {
     return false;
   }
   const { initClient } = await import("@/core/llm/client");
-  initClient(key);
+  initClient(key, provider as LlmProvider);
   return true;
 }
 
-async function resetClaudeClient(): Promise<void> {
+async function resetLlmClient(): Promise<void> {
   const { resetClient } = await import("@/core/llm/client");
   resetClient();
 }
 
-function statusFromKey(key: string | null): ApiKeyStatus {
+function statusFromKey(key: string | null, provider: ApiProvider): ApiKeyStatus {
   return {
+    provider,
     configured: Boolean(key),
     maskedKey: key ? maskApiKey(key) : null,
   };
@@ -59,35 +77,35 @@ function statusFromKey(key: string | null): ApiKeyStatus {
 export function createApiKeySettingsService(
   store: ApiKeyStore = keychainStore,
 ): ApiKeySettingsService {
-  async function loadStatus(): Promise<ApiKeyStatus> {
-    const key = await store.get();
-    return statusFromKey(key);
+  async function loadStatus(provider: ApiProvider = "claude"): Promise<ApiKeyStatus> {
+    const key = await store.get(provider);
+    return statusFromKey(key, provider);
   }
 
   return {
     loadStatus,
 
-    async initializeSavedKey() {
-      const key = await store.get();
+    async initializeSavedKey(provider = "claude") {
+      const key = await store.get(provider);
       return {
-        ...statusFromKey(key),
-        clientInitialized: await initializeClaudeClient(key),
+        ...statusFromKey(key, provider),
+        clientInitialized: await initializeLlmClient(key, provider),
       };
     },
 
-    async save(key) {
+    async save(key, provider = "claude") {
       const trimmed = key.trim();
       if (!trimmed) {
         throw new Error("API Key 不能为空");
       }
-      await store.save(trimmed);
-      return loadStatus();
+      await store.save(trimmed, provider);
+      return loadStatus(provider);
     },
 
-    async delete() {
-      await store.delete();
-      await resetClaudeClient();
-      return loadStatus();
+    async delete(provider = "claude") {
+      await store.delete(provider);
+      await resetLlmClient();
+      return loadStatus(provider);
     },
   };
 }

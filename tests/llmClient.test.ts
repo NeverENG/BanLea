@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getClient, initClient, isInitialized, resetClient } from "@/core/llm/client";
+import {
+  getClient,
+  getCurrentProvider,
+  initClient,
+  isInitialized,
+  modelForTier,
+  resetClient,
+} from "@/core/llm/client";
 
 describe("llm client", () => {
   afterEach(() => {
@@ -18,7 +25,7 @@ describe("llm client", () => {
     resetClient();
 
     expect(isInitialized()).toBe(false);
-    expect(() => getClient()).toThrow("Claude 客户端未初始化");
+    expect(() => getClient()).toThrow("LLM 客户端未初始化");
   });
 
   it("messages.create 使用 key 调用 Anthropic Messages API", async () => {
@@ -51,6 +58,52 @@ describe("llm client", () => {
           model: "claude-haiku-4-5",
           max_tokens: 32,
           messages: [{ role: "user", content: "hello" }],
+        }),
+      }),
+    );
+  });
+
+  it("DeepSeek provider 使用 OpenAI-compatible chat completions", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: "deepseek ok" } }],
+        }),
+        {
+          status: 200,
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    initClient("sk-ds-test", "deepseek");
+
+    expect(getCurrentProvider()).toBe("deepseek");
+    expect(modelForTier("light")).toBe("deepseek-v4-flash");
+
+    const result = await getClient().messages.create({
+      model: modelForTier("light"),
+      max_tokens: 32,
+      system: "system prompt",
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(result.content).toEqual([{ type: "text", text: "deepseek ok" }]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.deepseek.com/chat/completions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer sk-ds-test",
+          "content-type": "application/json",
+        }),
+        body: JSON.stringify({
+          model: "deepseek-v4-flash",
+          max_tokens: 32,
+          messages: [
+            { role: "system", content: "system prompt" },
+            { role: "user", content: "hello" },
+          ],
         }),
       }),
     );

@@ -39,6 +39,7 @@ describe("apiKeySettings", () => {
     const service = createApiKeySettingsService(store());
 
     await expect(service.loadStatus()).resolves.toEqual({
+      provider: "claude",
       configured: false,
       maskedKey: null,
     });
@@ -50,8 +51,12 @@ describe("apiKeySettings", () => {
 
     const status = await service.save("  sk-ant-api03-abcdef123456  ");
 
-    expect(apiKeyStore.save).toHaveBeenCalledWith("sk-ant-api03-abcdef123456");
+    expect(apiKeyStore.save).toHaveBeenCalledWith(
+      "sk-ant-api03-abcdef123456",
+      "claude",
+    );
     expect(status).toEqual({
+      provider: "claude",
       configured: true,
       maskedKey: "sk-ant-…3456",
     });
@@ -62,10 +67,25 @@ describe("apiKeySettings", () => {
 
     const status = await service.initializeSavedKey();
 
-    expect(initClient).toHaveBeenCalledWith("sk-ant-api03-abcdef123456");
+    expect(initClient).toHaveBeenCalledWith("sk-ant-api03-abcdef123456", "claude");
     expect(status).toEqual({
+      provider: "claude",
       configured: true,
       maskedKey: "sk-ant-…3456",
+      clientInitialized: true,
+    });
+  });
+
+  it("initializeSavedKey 支持 DeepSeek provider", async () => {
+    const service = createApiKeySettingsService(store("sk-ds-abcdef123456"));
+
+    const status = await service.initializeSavedKey("deepseek");
+
+    expect(initClient).toHaveBeenCalledWith("sk-ds-abcdef123456", "deepseek");
+    expect(status).toEqual({
+      provider: "deepseek",
+      configured: true,
+      maskedKey: "sk-ds-a…3456",
       clientInitialized: true,
     });
   });
@@ -77,6 +97,7 @@ describe("apiKeySettings", () => {
 
     expect(initClient).not.toHaveBeenCalled();
     expect(status).toEqual({
+      provider: "claude",
       configured: false,
       maskedKey: null,
       clientInitialized: false,
@@ -95,9 +116,10 @@ describe("apiKeySettings", () => {
 
     const status = await service.delete();
 
-    expect(apiKeyStore.delete).toHaveBeenCalledTimes(1);
+    expect(apiKeyStore.delete).toHaveBeenCalledWith("claude");
     expect(resetClient).toHaveBeenCalledTimes(1);
     expect(status).toEqual({
+      provider: "claude",
       configured: false,
       maskedKey: null,
     });

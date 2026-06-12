@@ -33,6 +33,8 @@ import {
 } from "@/features/feed";
 import { FeedWorkspaceView } from "@/features/feed/FeedWorkspaceView";
 import {
+  API_PROVIDER_LABELS,
+  type ApiProvider,
   createApiKeySettingsService,
   type ApiKeyStatus,
 } from "@/features/settings/apiKeySettings";
@@ -90,6 +92,7 @@ type ThemeMode = "light" | "dark";
 
 const THEME_STORAGE_KEY = "banlea-theme";
 const DOMAIN_FOLDER_STORAGE_KEY = "banlea-domain-folders";
+const API_PROVIDER_STORAGE_KEY = "banlea-api-provider";
 
 const WORKSPACE_VIEW_OPTIONS: { view: WorkspaceView; label: string; glyph: string }[] = [
   { view: "tutor", label: "学习", glyph: "学" },
@@ -101,6 +104,8 @@ const RESOURCE_MODE_OPTIONS: { mode: ResourceMode; label: string }[] = [
   { mode: "reading", label: "书单" },
   { mode: "feed", label: "推荐" },
 ];
+
+const API_PROVIDER_OPTIONS: ApiProvider[] = ["claude", "deepseek"];
 
 const DEFAULT_DOMAIN_CREATED_AT = "2026-06-10T00:00:00.000Z";
 
@@ -269,6 +274,21 @@ function readInitialTheme(): ThemeMode {
     : "light";
 }
 
+function readInitialApiProvider(): ApiProvider {
+  if (typeof window === "undefined") {
+    return "claude";
+  }
+  try {
+    const saved = window.localStorage.getItem(API_PROVIDER_STORAGE_KEY);
+    if (saved === "claude" || saved === "deepseek") {
+      return saved;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return "claude";
+}
+
 function friendlyErrorMessage(error: unknown, fallback: string): string {
   const message = error instanceof Error ? error.message : fallback;
   return message.includes("Cannot read properties of undefined") &&
@@ -306,14 +326,16 @@ export default function App() {
   const [lastEvidence, setLastEvidence] = useState<Evidence | null>(null);
   const [lastResult, setLastResult] = useState<LearningEventResult | null>(null);
   const [status, setStatus] = useState("等待记录");
+  const [apiProvider, setApiProvider] = useState<ApiProvider>(readInitialApiProvider);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyStatus>({
+    provider: apiProvider,
     configured: false,
     maskedKey: null,
   });
   const [apiKeyMessage, setApiKeyMessage] = useState("未设置");
   const [isKeyBusy, setIsKeyBusy] = useState(false);
-  const [isClaudeReady, setIsClaudeReady] = useState(false);
+  const [isLlmReady, setIsLlmReady] = useState(false);
   const [resourceSourceStatuses, setResourceSourceStatuses] = useState<
     ResourceSourceRuntimeStatus[]
   >([]);
@@ -416,14 +438,15 @@ export default function App() {
     let cancelled = false;
     setIsKeyBusy(true);
     apiKeyService
-      .initializeSavedKey()
+      .initializeSavedKey(apiProvider)
       .then((next) => {
         if (!cancelled) {
           setApiKeyStatus({
+            provider: next.provider,
             configured: next.configured,
             maskedKey: next.maskedKey,
           });
-          setIsClaudeReady(next.clientInitialized);
+          setIsLlmReady(next.clientInitialized);
           setApiKeyMessage(next.clientInitialized ? "已初始化" : "未设置");
         }
       })
@@ -440,7 +463,15 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [apiKeyService]);
+  }, [apiKeyService, apiProvider]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(API_PROVIDER_STORAGE_KEY, apiProvider);
+    } catch {
+      // ignore storage errors
+    }
+  }, [apiProvider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -573,13 +604,14 @@ export default function App() {
     setIsKeyBusy(true);
     setApiKeyMessage("保存中");
     try {
-      await apiKeyService.save(apiKeyInput);
-      const next = await apiKeyService.initializeSavedKey();
+      await apiKeyService.save(apiKeyInput, apiProvider);
+      const next = await apiKeyService.initializeSavedKey(apiProvider);
       setApiKeyStatus({
+        provider: next.provider,
         configured: next.configured,
         maskedKey: next.maskedKey,
       });
-      setIsClaudeReady(next.clientInitialized);
+      setIsLlmReady(next.clientInitialized);
       setApiKeyInput("");
       setApiKeyMessage(next.clientInitialized ? "已保存并初始化" : "已保存");
     } catch (error) {
@@ -593,9 +625,9 @@ export default function App() {
     setIsKeyBusy(true);
     setApiKeyMessage("删除中");
     try {
-      const next = await apiKeyService.delete();
+      const next = await apiKeyService.delete(apiProvider);
       setApiKeyStatus(next);
-      setIsClaudeReady(false);
+      setIsLlmReady(false);
       setApiKeyInput("");
       setApiKeyMessage("已删除");
     } catch (error) {
@@ -608,12 +640,13 @@ export default function App() {
   async function refreshKeyStatus() {
     setIsKeyBusy(true);
     try {
-      const next = await apiKeyService.initializeSavedKey();
+      const next = await apiKeyService.initializeSavedKey(apiProvider);
       setApiKeyStatus({
+        provider: next.provider,
         configured: next.configured,
         maskedKey: next.maskedKey,
       });
-      setIsClaudeReady(next.clientInitialized);
+      setIsLlmReady(next.clientInitialized);
       setApiKeyMessage(next.clientInitialized ? "已初始化" : "未设置");
     } catch (error) {
       setApiKeyMessage(friendlyErrorMessage(error, "读取失败"));
@@ -715,7 +748,7 @@ export default function App() {
     };
     return createLearningEventService({
       repositories,
-      updateAfterEvidence: isClaudeReady
+      updateAfterEvidence: isLlmReady && apiProvider === "claude"
         ? (evidence) => runLiveHarnessUpdate(evidence, repositories)
         : undefined,
     });
@@ -750,7 +783,7 @@ export default function App() {
         getReadingListRepository(),
         getTutorSessionRepository(),
       ]);
-      const replyGenerator = isClaudeReady
+      const replyGenerator = isLlmReady
         ? (await import("@/features/tutor/claudeReply")).createClaudeTutorReplyGenerator()
         : undefined;
       const resourceSuggestionProvider =
@@ -1036,12 +1069,14 @@ export default function App() {
             <span className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  isClaudeReady
+                  isLlmReady
                     ? "bg-[var(--color-accent)]"
                     : "bg-[var(--color-faint)]"
                 }`}
               />
-              {isClaudeReady ? "Claude 已就绪" : "Claude 未连接"}
+              {isLlmReady
+                ? `${API_PROVIDER_LABELS[apiProvider]} 已就绪`
+                : `${API_PROVIDER_LABELS[apiProvider]} 未连接`}
             </span>
             <button
               aria-label="切换主题"
@@ -1200,8 +1235,27 @@ export default function App() {
                 <section className="ink-card p-5">
                   <div className="ink-eyebrow">连接</div>
                   <h2 className="ink-title mt-1.5 text-lg">API Key</h2>
-                  <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}{isClaudeReady ? " · Claude 已初始化" : ""}</div>
-                  <input className="ink-field mt-3" onChange={(event) => setApiKeyInput(event.target.value)} placeholder="Anthropic API Key" type="password" value={apiKeyInput} />
+                  <div className="mt-3 flex rounded-full border border-[var(--color-border)] bg-[var(--color-soft)] p-1">
+                    {API_PROVIDER_OPTIONS.map((provider) => (
+                      <button
+                        className={`flex-1 rounded-full px-3 py-1.5 text-sm transition ${
+                          apiProvider === provider
+                            ? "bg-[var(--color-surface)] text-[var(--color-ink-strong)] shadow-[var(--shadow-card)]"
+                            : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
+                        }`}
+                        key={provider}
+                        onClick={() => {
+                          setApiProvider(provider);
+                          setApiKeyInput("");
+                        }}
+                        type="button"
+                      >
+                        {API_PROVIDER_LABELS[provider]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 text-sm text-[var(--color-muted)]">{apiKeyStatus.configured ? apiKeyStatus.maskedKey : "未设置"}{isLlmReady ? ` · ${API_PROVIDER_LABELS[apiProvider]} 已初始化` : ""}</div>
+                  <input className="ink-field mt-3" onChange={(event) => setApiKeyInput(event.target.value)} placeholder={`${API_PROVIDER_LABELS[apiProvider]} API Key`} type="password" value={apiKeyInput} />
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <button className="ink-btn ink-btn-seal" disabled={isKeyBusy} onClick={saveKey} type="button">保存</button>
                     <button className="ink-btn ink-btn-ghost" disabled={isKeyBusy} onClick={deleteKey} type="button">删除</button>

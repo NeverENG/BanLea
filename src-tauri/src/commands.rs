@@ -4,22 +4,30 @@
 use keyring::Entry;
 
 const SERVICE: &str = "ai.potentia.banlea";
-const ACCOUNT: &str = "anthropic_api_key";
+const CLAUDE_ACCOUNT: &str = "anthropic_api_key";
+const DEEPSEEK_ACCOUNT: &str = "deepseek_api_key";
 
-fn entry() -> Result<Entry, String> {
-    Entry::new(SERVICE, ACCOUNT).map_err(|e| e.to_string())
+fn account_for_provider(provider: Option<String>) -> &'static str {
+    match provider.as_deref() {
+        Some("deepseek") => DEEPSEEK_ACCOUNT,
+        _ => CLAUDE_ACCOUNT,
+    }
+}
+
+fn entry(provider: Option<String>) -> Result<Entry, String> {
+    Entry::new(SERVICE, account_for_provider(provider)).map_err(|e| e.to_string())
 }
 
 /// 保存 API Key 到系统 keychain
 #[tauri::command]
-pub fn save_api_key(key: String) -> Result<(), String> {
-    entry()?.set_password(&key).map_err(|e| e.to_string())
+pub fn save_api_key(key: String, provider: Option<String>) -> Result<(), String> {
+    entry(provider)?.set_password(&key).map_err(|e| e.to_string())
 }
 
 /// 读取 API Key；未设置时返回 None
 #[tauri::command]
-pub fn get_api_key() -> Result<Option<String>, String> {
-    match entry()?.get_password() {
+pub fn get_api_key(provider: Option<String>) -> Result<Option<String>, String> {
+    match entry(provider)?.get_password() {
         Ok(p) => Ok(Some(p)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(e.to_string()),
@@ -28,8 +36,8 @@ pub fn get_api_key() -> Result<Option<String>, String> {
 
 /// 删除 API Key（不存在也视为成功）
 #[tauri::command]
-pub fn delete_api_key() -> Result<(), String> {
-    match entry()?.delete_credential() {
+pub fn delete_api_key(provider: Option<String>) -> Result<(), String> {
+    match entry(provider)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
     }

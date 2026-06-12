@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   getClient,
-  MODELS,
+  modelForTier,
   type ContentBlock,
   type MessageParam,
   type ModelTier,
@@ -30,7 +30,7 @@ function textOf(content: ContentBlock[]): string {
 /** 非流式调用，返回纯文本 */
 export async function ask(opts: AskOptions): Promise<string> {
   const res = await getClient().messages.create({
-    model: MODELS[opts.tier ?? "deep"],
+    model: modelForTier(opts.tier ?? "deep"),
     max_tokens: opts.maxTokens ?? 16000,
     system: opts.system,
     thinking: { type: "adaptive" },
@@ -46,7 +46,7 @@ export async function streamAsk(
   onDelta: (delta: string) => void,
 ): Promise<string> {
   const stream = getClient().messages.stream({
-    model: MODELS[opts.tier ?? "deep"],
+    model: modelForTier(opts.tier ?? "deep"),
     max_tokens: opts.maxTokens ?? 64000,
     system: opts.system,
     thinking: { type: "adaptive" },
@@ -68,7 +68,7 @@ export async function askStructured<T>(
 ): Promise<T> {
   const jsonSchema = z.toJSONSchema(schema);
   const res = await getClient().messages.create({
-    model: MODELS[opts.tier ?? "deep"],
+    model: modelForTier(opts.tier ?? "deep"),
     max_tokens: opts.maxTokens ?? 16000,
     system: opts.system,
     output_config: {
