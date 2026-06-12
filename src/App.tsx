@@ -57,8 +57,12 @@ import {
 } from "@/features/portrait/PortraitStatusPanel";
 import { saveTutorTurnMessages } from "@/features/history";
 import {
+  addManualReadingListItem,
   addTutorResourceSuggestions,
+  buildManualReadingListItemInput,
   changeReadingListItemStatus,
+  groupReadingListItems,
+  type ManualReadingListDraft,
   type ReadingListGroup,
   type ReadingListSummary,
   type ReadingListViewItem,
@@ -338,6 +342,7 @@ export default function App() {
     EMPTY_DASHBOARD_SUMMARY,
   );
   const [readingListBusyId, setReadingListBusyId] = useState<number | null>(null);
+  const [isManualResourceSaving, setIsManualResourceSaving] = useState(false);
   const [readingListMessage, setReadingListMessage] = useState("未操作");
   const [feedBusyId, setFeedBusyId] = useState<string | null>(null);
   const [feedRecommendationView, setFeedRecommendationView] =
@@ -797,6 +802,66 @@ export default function App() {
     }
   }
 
+  function prependReadingListItem(item: ReadingListViewItem) {
+    const nextItems = [item, ...readingListItems];
+    setReadingListItems(nextItems);
+    setReadingListGroups(groupReadingListItems(nextItems));
+    setReadingListSummary((summary) => ({
+      ...summary,
+      total: summary.total + 1,
+      byStatus: {
+        ...summary.byStatus,
+        [item.status]: summary.byStatus[item.status] + 1,
+      },
+    }));
+  }
+
+  async function addManualResource(
+    input: ManualReadingListDraft,
+  ): Promise<boolean> {
+    const addedAt = new Date().toISOString();
+    let previewInput: ReturnType<typeof buildManualReadingListItemInput>;
+    try {
+      previewInput = buildManualReadingListItemInput({
+        ...input,
+        domain,
+        addedAt,
+      });
+    } catch (error) {
+      setReadingListMessage(friendlyErrorMessage(error, "添加失败"));
+      return false;
+    }
+
+    setIsManualResourceSaving(true);
+    setReadingListMessage("添加中");
+    try {
+      const repository = await getReadingListRepository();
+      const item = await addManualReadingListItem({
+        ...input,
+        domain,
+        repository,
+        now: () => addedAt,
+      });
+      prependReadingListItem(item);
+      setReadingListMessage("已添加");
+      await refreshLoopStatus(domain);
+      return true;
+    } catch {
+      prependReadingListItem({
+        id: null,
+        title: previewInput.title,
+        kind: previewInput.kind ?? "doc",
+        status: previewInput.status ?? "todo",
+        url: previewInput.url ?? null,
+        addedAt: previewInput.addedAt,
+      });
+      setReadingListMessage("已在浏览器预览中添加");
+      return true;
+    } finally {
+      setIsManualResourceSaving(false);
+    }
+  }
+
   async function changeReadingStatus(
     item: ReadingListViewItem,
     nextStatus: ReadingListStatus,
@@ -1103,7 +1168,18 @@ export default function App() {
               </div>
               <section className="ink-card flex min-h-0 flex-1 flex-col overflow-hidden">
                 {resourceMode === "reading" ? (
-                  <ReadingListWorkspaceView busyId={readingListBusyId} groups={readingListGroups} isLoading={isLoopStatusLoading} items={readingListItems} message={readingListMessage} onChangeStatus={changeReadingStatus} onRefresh={() => refreshLoopStatus()} summary={readingListSummary} />
+                  <ReadingListWorkspaceView
+                    busyId={readingListBusyId}
+                    groups={readingListGroups}
+                    isAddingManualResource={isManualResourceSaving}
+                    isLoading={isLoopStatusLoading}
+                    items={readingListItems}
+                    message={readingListMessage}
+                    onAddManualResource={addManualResource}
+                    onChangeStatus={changeReadingStatus}
+                    onRefresh={() => refreshLoopStatus()}
+                    summary={readingListSummary}
+                  />
                 ) : (
                   <FeedWorkspaceView busyId={feedBusyId} isLoading={isLoopStatusLoading} message={feedMessage} onFeedback={recordFeedFeedback} onRefresh={() => refreshLoopStatus()} view={feedRecommendationView} />
                 )}

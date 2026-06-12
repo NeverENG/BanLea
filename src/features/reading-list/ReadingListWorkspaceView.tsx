@@ -1,5 +1,11 @@
+import { type FormEvent, useState } from "react";
 import type { ReadingListStatus } from "@/types/readingList";
-import type { ReadingListGroup, ReadingListSummary, ReadingListViewItem } from "./index";
+import type {
+  ManualReadingListDraft,
+  ReadingListGroup,
+  ReadingListSummary,
+  ReadingListViewItem,
+} from "./index";
 
 export interface ReadingListWorkspaceViewProps {
   groups: ReadingListGroup[];
@@ -8,6 +14,8 @@ export interface ReadingListWorkspaceViewProps {
   summary: ReadingListSummary;
   busyId: number | null;
   message: string;
+  isAddingManualResource: boolean;
+  onAddManualResource: (input: ManualReadingListDraft) => Promise<boolean>;
   onRefresh: () => void;
   onChangeStatus: (item: ReadingListViewItem, status: ReadingListStatus) => void;
 }
@@ -60,11 +68,53 @@ export function ReadingListWorkspaceView({
   summary,
   busyId,
   message,
+  isAddingManualResource,
+  onAddManualResource,
   onRefresh,
   onChangeStatus,
 }: ReadingListWorkspaceViewProps) {
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
+
+  async function submitManualResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const saved = await onAddManualResource({
+      title: manualTitle,
+      url: manualUrl,
+    });
+    if (saved) {
+      setManualUrl("");
+      setManualTitle("");
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-5">
+      <form
+        className="mb-4 grid gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-raised)] p-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_auto]"
+        onSubmit={submitManualResource}
+      >
+        <input
+          className="ink-field"
+          onChange={(event) => setManualUrl(event.target.value)}
+          placeholder="粘贴资料链接"
+          value={manualUrl}
+        />
+        <input
+          className="ink-field"
+          onChange={(event) => setManualTitle(event.target.value)}
+          placeholder="标题（可选）"
+          value={manualTitle}
+        />
+        <button
+          className="ink-btn ink-btn-seal whitespace-nowrap"
+          disabled={isAddingManualResource || !manualUrl.trim()}
+          type="submit"
+        >
+          {isAddingManualResource ? "添加中…" : "添加资料"}
+        </button>
+      </form>
+
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {SUMMARY_ITEMS.map((item) => (
           <div

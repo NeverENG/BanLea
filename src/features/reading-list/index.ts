@@ -40,6 +40,26 @@ export interface AddResourceItemsToReadingListOptions {
   now?: () => string;
 }
 
+export interface ManualReadingListDraft {
+  title?: string;
+  url: string;
+  kind?: ReadingListKind;
+  status?: ReadingListStatus;
+}
+
+export interface BuildManualReadingListItemInputOptions
+  extends ManualReadingListDraft {
+  domain: string;
+  addedAt: string;
+}
+
+export interface AddManualReadingListItemOptions
+  extends ManualReadingListDraft {
+  domain: string;
+  repository: ReadingListRepository;
+  now?: () => string;
+}
+
 export interface ChangeReadingListItemStatusOptions {
   id: number;
   status: ReadingListStatus;
@@ -116,6 +136,30 @@ function toViewItem(item: ReadingListItem): ReadingListViewItem {
     url: item.url,
     addedAt: item.addedAt,
   };
+}
+
+function normalizeManualUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    throw new Error("请输入资料链接");
+  }
+  const candidate = trimmed.includes("://") ? trimmed : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error("资料链接格式不正确");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("资料链接只支持 http 或 https");
+  }
+  return parsed.toString();
+}
+
+function titleFromUrl(url: string): string {
+  const parsed = new URL(url);
+  const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
+  return `${parsed.hostname}${path}`;
 }
 
 function emptyStatusCounts(): ReadingListStatusCounts {
@@ -212,6 +256,49 @@ export function resourceItemsToTutorResourceSuggestions(
   limit?: number,
 ): TutorResourceSuggestion[] {
   return limitItems(items, limit).map(resourceItemToTutorResourceSuggestion);
+}
+
+export function buildManualReadingListItemInput({
+  domain,
+  title,
+  url,
+  kind,
+  status,
+  addedAt,
+}: BuildManualReadingListItemInputOptions): NewReadingListItem {
+  const normalizedUrl = normalizeManualUrl(url);
+  const normalizedTitle = title?.trim() || titleFromUrl(normalizedUrl);
+
+  return {
+    domain,
+    sourceId: `manual:${addedAt}`,
+    title: normalizedTitle,
+    url: normalizedUrl,
+    kind: kind ?? "doc",
+    status: status ?? "todo",
+    addedAt,
+  };
+}
+
+export async function addManualReadingListItem({
+  domain,
+  title,
+  url,
+  kind,
+  status,
+  repository,
+  now = defaultNow,
+}: AddManualReadingListItemOptions): Promise<ReadingListViewItem> {
+  const item = buildManualReadingListItemInput({
+    domain,
+    title,
+    url,
+    kind,
+    status,
+    addedAt: now(),
+  });
+  const inserted = await repository.insert(item);
+  return toViewItem(inserted);
 }
 
 export function resourceItemToReadingListItem(

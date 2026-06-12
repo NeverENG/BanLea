@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  addManualReadingListItem,
   addTutorResourceSuggestions,
+  buildManualReadingListItemInput,
   changeReadingListItemStatus,
   groupReadingListItems,
   loadReadingList,
@@ -47,6 +49,64 @@ function repository(initial: ReadingListItem[] = []): ReadingListRepository {
 }
 
 describe("reading-list feature", () => {
+  it("构建手动资料输入时标准化链接并推断标题", () => {
+    const input = buildManualReadingListItemInput({
+      domain: "computer_science",
+      url: "kubernetes.io/docs/",
+      addedAt: "2026-06-11T12:00:00.000Z",
+    });
+
+    expect(input).toEqual({
+      domain: "computer_science",
+      sourceId: "manual:2026-06-11T12:00:00.000Z",
+      title: "kubernetes.io/docs",
+      url: "https://kubernetes.io/docs/",
+      kind: "doc",
+      status: "todo",
+      addedAt: "2026-06-11T12:00:00.000Z",
+    });
+  });
+
+  it("手动资料只接受 http/https 链接", () => {
+    expect(() =>
+      buildManualReadingListItemInput({
+        domain: "computer_science",
+        url: "ftp://example.com/file",
+        addedAt: "2026-06-11T12:00:00.000Z",
+      }),
+    ).toThrow("资料链接只支持 http 或 https");
+  });
+
+  it("把手动资料链接写入待读书单", async () => {
+    const repo = repository();
+
+    const inserted = await addManualReadingListItem({
+      domain: "computer_science",
+      repository: repo,
+      title: "Kubernetes 官方文档",
+      url: "https://kubernetes.io/docs/",
+      now: () => "2026-06-11T12:00:00.000Z",
+    });
+
+    expect(inserted).toEqual({
+      id: 1,
+      title: "Kubernetes 官方文档",
+      kind: "doc",
+      status: "todo",
+      url: "https://kubernetes.io/docs/",
+      addedAt: "2026-06-11T12:00:00.000Z",
+    });
+    expect(repo.insert).toHaveBeenCalledWith({
+      domain: "computer_science",
+      sourceId: "manual:2026-06-11T12:00:00.000Z",
+      title: "Kubernetes 官方文档",
+      url: "https://kubernetes.io/docs/",
+      kind: "doc",
+      status: "todo",
+      addedAt: "2026-06-11T12:00:00.000Z",
+    });
+  });
+
   it("把 tutor 资源建议写入待读书单", async () => {
     const repo = repository();
 
